@@ -5,11 +5,10 @@ on:
     branches:
       - main
 
-name: Test coverage
+name: test
 
 jobs:
   coverage:
-    name: Collect test coverage
     runs-on: "ubuntu-latest"
     env:
       RUSTFLAGS: -D warnings
@@ -17,16 +16,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Setup rust toolchain
+      - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - name: Cache rust and cargo
+      - name: cache rust and cargo
         uses: swatinem/rust-cache@v2
-      - name: Install nextest and cargo-llvm-cov
+      - name: install nextest and cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-llvm-cov
-      - name: Collect coverage data
+      - name: run tests
         run: |
           cargo llvm-cov nextest

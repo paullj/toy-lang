@@ -19,7 +19,6 @@ pub type Spanned<T> = (T, Span);
 pub type Span = Range<usize>;
 
 pub type SpannedError = Spanned<Error>;
-
 pub type SpannedResult<T, E = SpannedError> = Result<T, E>;
 
 #[derive(Error, Debug, Clone, PartialEq)]

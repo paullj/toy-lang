@@ -1,4 +1,4 @@
-use crate::{Lexer, Token, error::Error, syntax::ast::Atom};
+use crate::{error::SpannedResult, syntax::ast::Atom, Lexer, Token};
 
 use super::ast::{Operator, TokenTree, infix_binding_power, prefix_binding_power};
 
@@ -15,11 +15,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<TokenTree<'a>, Error> {
+    pub fn parse(&mut self) -> SpannedResult<TokenTree<'a>> {
         self.parse_within(0)
     }
 
-    fn parse_within(&mut self, min_bp: u8) -> Result<TokenTree<'a>, Error> {
+    fn parse_within(&mut self, min_bp: u8) -> SpannedResult<TokenTree<'a>> {
         let token = match self.lexer.next() {
             Some(Ok((token, _))) => token,
             Some(Err(e)) => {

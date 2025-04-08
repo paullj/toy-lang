@@ -3,9 +3,9 @@ mod syntax;
 
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use error::report_error;
-use syntax::lex::{Lexer, Token};
+use syntax::{lex::{Lexer, Token}, parse::Parser};
 
-use miette::{Context, IntoDiagnostic, WrapErr};
+use miette::{Context, IntoDiagnostic};
 use std::{
     fs,
     io::{BufRead, Write},
@@ -14,12 +14,12 @@ use std::{
 };
 
 use clap::{
-    Parser,
+    Parser as ClapParser,
     builder::styling::{AnsiColor, Color, Style},
 };
 
 /// a simple interpreter
-#[derive(Parser, Debug)]
+#[derive(ClapParser, Debug)]
 #[command(version, about, long_about = None, styles=get_styles())]
 struct Arguments {
     /// Path of file to run
@@ -60,7 +60,7 @@ fn run_file(path: &PathBuf) -> miette::Result<()> {
 fn run_prompt() -> Result<(), String> {
     loop {
         print!("> ");
-        std::io::stdout()
+        let _ = std::io::stdout()
             .flush()
             .into_diagnostic()
             .wrap_err_with(|| "Failed to flush stdout");
@@ -70,35 +70,27 @@ fn run_prompt() -> Result<(), String> {
         let mut handle = stdin.lock();
         match handle.read_line(&mut input) {
             Ok(0) | Ok(1) => return Ok(()), // EOF or empty line
-            Err(e) => return Err("".to_string()),
+            Err(e) => return Err(e.to_string()),
             _ => (),
         }
-        println!("Input: {}", input);
-        run(&input).wrap_err_with(|| format!("Failed to run input: {}", input));
+        let _ = run(&input).wrap_err_with(|| format!("Failed to run input: {}", input));
     }
 }
 
 fn run(contents: &str) -> miette::Result<()> {
-    let lexer = Lexer::new(&contents);
+    let mut parser = Parser::new(&contents);
 
-    for token in lexer {
-        match token {
-            Ok(token) => {
-                println!("{:?}", token);
-            }
-            Err((error, span)) => {
-                let writer = StandardStream::stderr(ColorChoice::Always);
+    let reuslt = parser.parse();
 
-                report_error(&mut writer.lock(), contents, &(error, span));
-            }
+    match reuslt {
+        Ok(ast) => {
+            println!("AST: {:#?}", ast);
+        }
+        Err(e) => {
+            let writer = StandardStream::stderr(ColorChoice::Always);
+            report_error(&mut writer.lock(), contents, &e);
         }
     }
-
-    // let lexer = Lexer::new(&contents);
-    // for token in lexer {
-    //     let token = token?;
-    //     println!("{:?}", token);
-    // }
     Ok(())
 }
 
