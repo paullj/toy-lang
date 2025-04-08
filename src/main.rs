@@ -1,9 +1,9 @@
 mod error;
 mod syntax;
 
-use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-use error::report_error;
-use syntax::{lex::{Lexer, Token}, parse::Parser};
+use codespan_reporting::{diagnostic::{Diagnostic, Label}, files::SimpleFile, term::{self, termcolor::{ColorChoice, StandardStream}}};
+use error::{report_error, report_errors, SpannedError};
+use syntax::{lex::{Lexer, SpannedToken, Token}, parse::Parser};
 
 use miette::{Context, IntoDiagnostic};
 use std::{
@@ -14,8 +14,7 @@ use std::{
 };
 
 use clap::{
-    Parser as ClapParser,
-    builder::styling::{AnsiColor, Color, Style},
+    builder::styling::{AnsiColor, Color, Style}, Parser as ClapParser, Subcommand
 };
 
 /// a simple interpreter
@@ -25,14 +24,68 @@ struct Arguments {
     /// Path of file to run
     #[arg(value_name = "PATH", index = 1)]
     path: Option<PathBuf>,
+
+    #[command(subcommand)]
+    cmd: Option<Commands>
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Commands {
+    Lex{ contents: String },
+    Parse{ contents: String },
 }
 
 fn main() -> ExitCode {
     let args = Arguments::parse();
 
+    // Commands for testing lexing and parsing
+    if let Some(cmd) = &args.cmd {
+        match cmd {
+            Commands::Lex { contents } => {
+                let lexer = Lexer::new(contents);
+                
+                let errors: Vec<SpannedError> = lexer.clone().filter_map(Result::err).collect();
+                
+                if !errors.is_empty() {
+                    let writer = StandardStream::stderr(ColorChoice::Always);
+                    report_errors(&mut writer.lock(), contents, &errors);
+                    return ExitCode::FAILURE;
+                }
+
+                let tokens: Vec<SpannedToken> = lexer.filter_map(Result::ok).collect();
+                let diagnostic = Diagnostic::note()
+                    .with_message("Lexing completed successfully")
+                    .with_labels_iter(
+                        tokens.iter().map(|(token, span)| {
+                            Label::secondary((), span.clone())
+                                .with_message(format!("{:?}", token))
+                        })
+                    );
+
+                    let mut writer = StandardStream::stderr(ColorChoice::Always);
+                    let file = SimpleFile::new("input", contents);
+                    let config = term::Config::default();
+                    term::emit(&mut writer, &config, &file, &diagnostic).expect("failed to write to output");
+                return ExitCode::SUCCESS;
+            }
+            Commands::Parse { contents } => {
+                let mut parser = Parser::new(contents);
+                // TODO: support multiple errors
+                match parser.parse() {
+                    Ok(ast) => println!("{}", ast.to_string()),
+                    Err(e) => {
+                        eprintln!("Error: {:?}", e);
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+
     if let Some(path) = args.path {
         match run_file(&path) {
-            Ok(_) => {}
+            Ok(_) => {},
             Err(e) => {
                 eprintln!("Error: {e}");
                 return ExitCode::FAILURE;
@@ -40,13 +93,14 @@ fn main() -> ExitCode {
         }
     } else {
         match run_prompt() {
-            Ok(_) => {}
+            Ok(_) => {},
             Err(e) => {
                 eprintln!("Error: {e}");
                 return ExitCode::FAILURE;
             }
         }
     }
+
     ExitCode::SUCCESS
 }
 

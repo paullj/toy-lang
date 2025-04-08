@@ -1,17 +1,17 @@
 use crate::{error::SpannedResult, syntax::ast::Atom, Lexer, Token};
 
-use super::ast::{Operator, TokenTree, infix_binding_power, prefix_binding_power};
+use super::ast::{infix_binding_power, postfix_binding_power, prefix_binding_power, Operator, TokenTree};
 
 pub struct Parser<'a> {
     lexer: std::iter::Peekable<Lexer<'a>>,
-    contents: &'a str,
+    _contents: &'a str,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
             lexer: Lexer::new(input).peekable(),
-            contents: input,
+            _contents: input,
         }
     }
 
@@ -65,6 +65,15 @@ impl<'a> Parser<'a> {
                             Token::Slash => Operator::Slash,
                             _ => panic!("bad op: {:?}", token),
                         };
+                         if let Some((l_bp, ())) = postfix_binding_power(op) {
+                            if l_bp < min_bp {
+                                break;
+                            }
+                            self.lexer.next();
+                            lhs = TokenTree::Cons(op, vec![lhs]);
+                            continue;
+                        }
+
                         if let Some((l_bp, r_bp)) = infix_binding_power(op) {
                             if l_bp < min_bp {
                                 break;

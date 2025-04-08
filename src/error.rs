@@ -23,10 +23,16 @@ pub type SpannedResult<T, E = SpannedError> = Result<T, E>;
 
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum Error {
-    #[error("UnknownError: {0}")]
-    UnknownError(String),
     #[error("SyntaxError: {0}")]
     SyntaxError(SyntaxError),
+    #[error("SemanticError: {0}")]
+    SemanticError(SemanticError),
+}
+
+impl Default for Error {
+    fn default() -> Self {
+        Error::SyntaxError(SyntaxError::NonAsciiToken)
+    }
 }
 
 trait AsDiagnostic {
@@ -36,51 +42,89 @@ trait AsDiagnostic {
 impl AsDiagnostic for Error {
     fn as_diagnostic(&self, span: &Span) -> Diagnostic<()> {
         match self {
-            Error::SyntaxError(e) => e.as_diagnostic(span),
-            Error::UnknownError(e) => {
-                let mut diagnostic = Diagnostic::error()
-                    .with_code("UnknownError")
-                    .with_message(e.to_string())
-                    .with_labels(vec![Label::primary((), span.clone())]);
-                diagnostic = diagnostic.with_notes(vec!["An unknown error occurred".to_string()]);
-                diagnostic
-            }
+            Error::SyntaxError(syntax_error) => syntax_error.as_diagnostic(span),
+            Error::SemanticError(semantic_error) => semantic_error.as_diagnostic(span),
         }
-    }
-}
-
-impl Default for Error {
-    fn default() -> Self {
-        Error::UnknownError("Unknown error".to_string())
     }
 }
 
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum SyntaxError {
-    #[error("unexpected token {token:?}")]
+    #[error("unexpected token `{token:?}`")]
     UnexpectedToken {
         token: String,
         expected: Vec<String>,
     },
+    #[error("non ascii token")]
+    NonAsciiToken,
+    #[error("Unterminated string")]
+    UnterminatedString,
     #[error("unexpected end of file")]
     UnexpectedEOF { expected: Vec<String> },
-    #[error("unterminated string")]
-    UnterminatedString,
 }
 
 impl AsDiagnostic for SyntaxError {
     fn as_diagnostic(&self, span: &Span) -> Diagnostic<()> {
-        let mut diagnostic = Diagnostic::error()
+        let diagnostic = Diagnostic::error()
             .with_code("syntax")
-            .with_message(self.to_string())
-            .with_labels(vec![Label::primary((), span.clone())]);
+            .with_message(self.to_string());
+
         match self {
             SyntaxError::UnexpectedEOF { expected, .. }
             | SyntaxError::UnexpectedToken { expected, .. } => {
-                diagnostic = diagnostic.with_notes(vec![format!("expected: {}", one_of(expected))]);
+                diagnostic.with_notes(vec![format!("expected: {}", one_of(expected))])
             }
-            _ => {}
+            SyntaxError::UnterminatedString => {
+                return diagnostic.with_label(Label::primary((), span.clone()).with_message(
+                    "String started here is not closed, missing closing double quote.",
+                ));
+            }
+            SyntaxError::NonAsciiToken => diagnostic.with_label(
+                Label::primary((), span.clone()).with_message("Unexpected non-ASCII token found"),
+            ),
+        }
+    }
+}
+
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum SemanticError {
+    #[error("integer overflow")]
+    IntegerOverflow,
+    #[error("integer negative underflow")]
+    IntegerNegativeOverflow,
+    #[error("integer parse error")]
+    IntegerParseError, // TODO: Does this need to be more specific?
+    #[error("float parse error")]
+    FloatParseError, // TODO: Does this need to be more specific?
+}
+
+impl AsDiagnostic for SemanticError {
+    fn as_diagnostic(&self, span: &Span) -> Diagnostic<()> {
+        let (message, note) = match self {
+            SemanticError::IntegerOverflow => (
+                "This integer is too large",
+                Some(
+                    "Integers are 64-bit signed integers which means they cannot exceed 9,223,372,036,854,775,807",
+                ),
+            ),
+            SemanticError::IntegerNegativeOverflow => (
+                "This integer is too small",
+                Some(
+                    "Integers are 64-bit signed integers which means they cannot be less than -9,223,372,036,854,775,808",
+                ),
+            ),
+            SemanticError::IntegerParseError => ("Cannot parse this integer", None),
+            SemanticError::FloatParseError => ("Cannot parse this float", None),
         };
+        let mut diagnostic = Diagnostic::error()
+            .with_code("semantic")
+            .with_message(self.to_string())
+            .with_label(Label::primary((), span.clone()).with_message(message));
+
+        if let Some(note) = note {
+            diagnostic = diagnostic.with_notes(vec![note.to_string()]);
+        }
+
         diagnostic
     }
 }
@@ -106,15 +150,16 @@ impl From<ParseIntError> for Error {
     fn from(err: ParseIntError) -> Self {
         use std::num::IntErrorKind::*;
         match err.kind() {
-            PosOverflow | NegOverflow => Error::UnknownError("Integer overflow".to_string()),
-            _ => Error::UnknownError("Integer parsing error".to_string()),
+            PosOverflow => Error::SemanticError(SemanticError::IntegerOverflow),
+            NegOverflow => Error::SemanticError(SemanticError::IntegerNegativeOverflow),
+            _ => Error::SemanticError(SemanticError::IntegerParseError),
         }
     }
 }
 
 impl From<ParseFloatError> for Error {
-    fn from(err: ParseFloatError) -> Self {
-        Error::UnknownError(format!("Float parsing error: {}", err.to_string()))
+    fn from(_err: ParseFloatError) -> Self {
+        Error::SemanticError(SemanticError::FloatParseError)
     }
 }
 

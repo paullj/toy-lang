@@ -2,9 +2,9 @@ use std::num::{ParseFloatError, ParseIntError};
 
 use logos::Logos;
 
-use crate::error::{Error, Spanned, SpannedError};
+use crate::error::{Error, Spanned,  SpannedResult, SyntaxError};
 
-type SpannedToken = Spanned<Token>;
+pub type SpannedToken = Spanned<Token>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Lexer<'a> {
@@ -22,7 +22,7 @@ impl<'a> Lexer<'a> {
 }
 
 impl Iterator for Lexer<'_> {
-    type Item = Result<SpannedToken, SpannedError>;
+    type Item = SpannedResult<SpannedToken>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(token) = self.pending.take() {
@@ -34,13 +34,13 @@ impl Iterator for Lexer<'_> {
                 let span = self.inner.span();
                 Some(Ok((token, span)))
             }
-            Err(_err) => {
+            Err(err) => {
                 let mut span = self.inner.span();
 
                 // Check for unterminated string.
                 if self.inner.slice().starts_with('"') {
                     return Some(Err((
-                        Error::UnknownError("Unterminated string".to_string()),
+                        Error::SyntaxError(SyntaxError::UnterminatedString),
                         span,
                     )));
                 }
@@ -50,8 +50,8 @@ impl Iterator for Lexer<'_> {
                         Ok(token) => token,
                         Err(err) => {
                             return Some(Err((
-                                Error::UnknownError(format!("Unexpected token: {}", err)),
-                                span,
+                                err,
+                                span
                             )));
                         }
                     };
@@ -63,13 +63,8 @@ impl Iterator for Lexer<'_> {
                         break;
                     }
                 }
-                Some(Err((
-                    Error::SyntaxError(crate::error::SyntaxError::UnexpectedToken {
-                        token: self.inner.source()[span.start..span.end].to_string(),
-                        expected: vec!["".to_string()],
-                    }),
-                    span,
-                )))
+                
+                Some(Err((err, span)))
             }
         }
     }
@@ -300,7 +295,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(r#""hello"#, Error::UnknownError("Unterminated string".to_string()))]
+    #[case(r#""hello"#, Error::SyntaxError(SyntaxError::UnterminatedString))]
     fn test_unterminated_string(#[case] input: &str, #[case] expected: Error) {
         let mut lexer = Lexer::new(input);
 
