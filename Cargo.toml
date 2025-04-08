@@ -1,0 +1,15 @@
+[package]
+name = "toy-lang"
+description = "A toy programming language"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.34", features = ["derive"] }
+miette = { version = "7.5.0", features = ["fancy"] } # TODO: Remove this
+logos = { version = "0.15.0" }
+thiserror = "2.0.12"
+codespan-reporting = "0.12.0"
+
+[dev-dependencies]
+rstest = "0.25.0"
