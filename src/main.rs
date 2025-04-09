@@ -5,7 +5,6 @@ use codespan_reporting::{diagnostic::{Diagnostic, Label}, files::SimpleFile, ter
 use error::{report_error, report_errors, SpannedError};
 use syntax::{lex::{Lexer, SpannedToken, Token}, parse::Parser};
 
-use miette::{Context, IntoDiagnostic};
 use std::{
     fs,
     io::{BufRead, Write},
@@ -104,20 +103,21 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run_file(path: &PathBuf) -> miette::Result<()> {
+fn run_file(path: &PathBuf) -> Result<(), String> {
     match fs::read_to_string(path) {
         Ok(contents) => run(&contents),
-        Err(e) => Err(miette::miette!(e)),
+        Err(e) => Err(e.to_string()),
     }
 }
 
 fn run_prompt() -> Result<(), String> {
     loop {
         print!("> ");
-        let _ = std::io::stdout()
-            .flush()
-            .into_diagnostic()
-            .wrap_err_with(|| "Failed to flush stdout");
+        match std::io::stdout().flush() {
+            Ok(_) => {},
+            Err(e) => return Err(
+                format!("Failed to flush stdout: {}", e.to_string())),
+        }
 
         let mut input = String::new();
         let stdin = std::io::stdin();
@@ -127,11 +127,11 @@ fn run_prompt() -> Result<(), String> {
             Err(e) => return Err(e.to_string()),
             _ => (),
         }
-        let _ = run(&input).wrap_err_with(|| format!("Failed to run input: {}", input));
+        let _ = run(&input);
     }
 }
 
-fn run(contents: &str) -> miette::Result<()> {
+fn run(contents: &str) -> Result<(), String> {
     let mut parser = Parser::new(&contents);
 
     let reuslt = parser.parse();
