@@ -5,10 +5,10 @@ on:
     branches:
       - main
 
-name: test
+name: workflow
 
 jobs:
-  tests:
+  test:
     runs-on: "ubuntu-latest"
     env:
       # RUSTFLAGS: -D warnings
@@ -29,7 +29,7 @@ jobs:
       - name: run tests
         run: |
           cargo llvm-cov nextest
-  linting:
+  lint:
     runs-on: "ubuntu-latest"
     env:
       CARGO_TERM_COLOR: always
@@ -46,7 +46,7 @@ jobs:
         run: |
           cargo clippy -- -D warnings
 
-  formatting:
+  format:
     runs-on: "ubuntu-latest"
     env:
       CARGO_TERM_COLOR: always
