@@ -1,6 +1,12 @@
-use crate::{error::SpannedResult, syntax::ast::Atom, Lexer, Token};
+use miette::Context;
 
-use super::ast::{infix_binding_power, postfix_binding_power, prefix_binding_power, Operator, TokenTree};
+use crate::{
+    Lexer, Token,
+    error::{Error, SyntaxError},
+    syntax::ast::Atom,
+};
+
+use super::ast::{Operator, Tree};
 
 pub struct Parser<'a> {
     lexer: std::iter::Peekable<Lexer<'a>>,
@@ -15,37 +21,49 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> SpannedResult<TokenTree<'a>> {
+    pub fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
         self.parse_within(0)
     }
 
-    fn parse_within(&mut self, min_bp: u8) -> SpannedResult<TokenTree<'a>> {
+    fn parse_within(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
+        //  looking_for: Option<(Operator, u8)>,
         let token = match self.lexer.next() {
             Some(Ok((token, _))) => token,
-            Some(Err(e)) => {
-                // return Err(e).wrap_err("on the left-hand side");
-                panic!("Error: {:?}", e);
+            Some(Err(err)) => {
+                // let message = if let Some((op, arg)) = looking_for {
+                //     format!("looking for argument {arg} for {op:?}")
+                // } else {
+                //     "looking for a statement".to_string()
+                // };
+                return Err(err).wrap_err("on the left side of the expression");
             }
             None => {
-                // return Ok(TokenTree::Atom(Atom::Nil));
-                panic!("EOF");
+                // TODO: Handle EOF properly
+                return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF)).wrap_err("ahh why!");
+                // if let Some((op, arg)) = looking_for {
+                //     return Err(
+                //         Error::SyntaxError(SyntaxError::UnexpectedEOF)
+                //     ).wrap_err( format!("looking for argument {arg} for {op:?}"));
+                // } else {
+                //     return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF)).wrap_err("looking for a statement");
+                // }
             }
         };
-        // TODO: Move this to a From trait for TokenTree or similar
+        // TODO: Move this tao a From trait for TokenTree or similar
         let mut lhs = match token {
-            Token::Int(n) => TokenTree::Atom(Atom::Int(n)),
-            Token::Float(n) => TokenTree::Atom(Atom::Float(n)),
-            Token::Identifier(id) => TokenTree::Atom(Atom::Identifier(id.into())),
+            Token::Int(n) => Tree::Atom(Atom::Int(n)),
+            Token::Float(n) => Tree::Atom(Atom::Float(n)),
+            Token::Identifier(id) => Tree::Atom(Atom::Identifier(id.into())),
             Token::Return | Token::Bang | Token::Minus => {
                 let op = match token {
                     Token::Return => Operator::Return,
                     Token::Bang => Operator::Bang,
                     Token::Minus => Operator::Minus,
-                    _ => unreachable!(),
+                    _ => unreachable!("unreachable from the outer match"),
                 };
                 let (_, r_bp) = prefix_binding_power(op);
                 match self.parse_within(r_bp) {
-                    Ok(rhs) => TokenTree::Cons(op, vec![rhs]),
+                    Ok(rhs) => Tree::Cons(op, vec![rhs]),
                     Err(_) => todo!(),
                 }
             }
@@ -65,12 +83,12 @@ impl<'a> Parser<'a> {
                             Token::Slash => Operator::Slash,
                             _ => panic!("bad op: {:?}", token),
                         };
-                         if let Some((l_bp, ())) = postfix_binding_power(op) {
+                        if let Some((l_bp, ())) = postfix_binding_power(op) {
                             if l_bp < min_bp {
                                 break;
                             }
                             self.lexer.next();
-                            lhs = TokenTree::Cons(op, vec![lhs]);
+                            lhs = Tree::Cons(op, vec![lhs]);
                             continue;
                         }
 
@@ -81,9 +99,9 @@ impl<'a> Parser<'a> {
                             self.lexer.next();
                             match self.parse_within(r_bp) {
                                 Ok(rhs) => {
-                                    lhs = TokenTree::Cons(op, vec![lhs, rhs]);
+                                    lhs = Tree::Cons(op, vec![lhs, rhs]);
                                 }
-                                Err(_) => todo!(),
+                                Err(err) => return Err(err).wrap_err(""),
                             }
                         }
                     }
@@ -98,6 +116,41 @@ impl<'a> Parser<'a> {
         }
         Ok(lhs)
     }
+}
+
+pub fn prefix_binding_power(op: Operator) -> ((), u8) {
+    match op {
+        Operator::Return => ((), 1),
+        Operator::Bang | Operator::Minus => ((), 11),
+        _ => panic!("bad op: {:?}", op),
+    }
+}
+
+pub fn postfix_binding_power(op: Operator) -> Option<(u8, ())> {
+    let res = match op {
+        Operator::Call => (13, ()),
+        _ => return None,
+    };
+    Some(res)
+}
+
+pub fn infix_binding_power(op: Operator) -> Option<(u8, u8)> {
+    let result = match op {
+        // '=' => (2, 1),
+        // '?' => (4, 3),
+        Operator::And | Operator::Or => (3, 4),
+        Operator::BangEqual
+        | Operator::EqualEqual
+        | Operator::Less
+        | Operator::LessEqual
+        | Operator::Greater
+        | Operator::GreaterEqual => (5, 6),
+        Operator::Plus | Operator::Minus => (7, 8),
+        Operator::Asterisk | Operator::Slash => (9, 10),
+        Operator::Field => (16, 15),
+        _ => return None,
+    };
+    Some(result)
 }
 
 #[cfg(test)]

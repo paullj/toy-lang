@@ -2,7 +2,7 @@ use std::num::{ParseFloatError, ParseIntError};
 
 use logos::Logos;
 
-use crate::error::{Error, Spanned,  SpannedResult, SyntaxError};
+use crate::error::{Error, Spanned, SyntaxError};
 
 pub type SpannedToken = Spanned<Token>;
 
@@ -22,7 +22,7 @@ impl<'a> Lexer<'a> {
 }
 
 impl Iterator for Lexer<'_> {
-    type Item = SpannedResult<SpannedToken>;
+    type Item = Result<SpannedToken, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(token) = self.pending.take() {
@@ -35,36 +35,41 @@ impl Iterator for Lexer<'_> {
                 Some(Ok((token, span)))
             }
             Err(err) => {
-                let mut span = self.inner.span();
+                let span = self.inner.span();
 
                 // Check for unterminated string.
                 if self.inner.slice().starts_with('"') {
-                    return Some(Err((
-                        Error::SyntaxError(SyntaxError::UnterminatedString),
-                        span,
-                    )));
+                    return Some(Err(Error::SyntaxError(SyntaxError::UnterminatedString {
+                        span: span.into(),
+                    })));
                 }
 
-                while let Some(token) = self.inner.next() {
-                    let token = match token {
-                        Ok(token) => token,
-                        Err(err) => {
-                            return Some(Err((
-                                err,
-                                span
-                            )));
-                        }
-                    };
-                    let span_new = self.inner.span();
-                    if span.end == span_new.start {
-                        span.end = span_new.end;
-                    } else {
-                        self.pending = Some((token, span_new));
-                        break;
+                // TODO: Figure out why I did this and if it is needed.
+                // while let Some(token) = self.inner.next() {
+                //     let token = match token {
+                //         Ok(token) => token,
+                //         Err(err) => {
+                //             return Some(Err(err));
+                //         }
+                //     };
+                //     let span_new = self.inner.span();
+                //     if span.end == span_new.start {
+                //         span.end = span_new.end;
+                //     } else {
+                //         self.pending = Some((token, span_new));
+                //         break;
+                //     }
+                // }
+
+                Some(Err(match err {
+                    Error::SyntaxError(SyntaxError::NonAsciiToken) => {
+                        Error::SyntaxError(SyntaxError::UnexpectedToken {
+                            token: self.inner.slice().to_string(),
+                            span: span.into(),
+                        })
                     }
-                }
-                
-                Some(Err((err, span)))
+                    error => error,
+                }))
             }
         }
     }
@@ -76,37 +81,37 @@ impl Iterator for Lexer<'_> {
 #[logos(error = Error)]
 pub(crate) enum Token {
     // Single-character tokens
-    #[token("(")]
+    #[token("(", priority = 3)]
     LeftParenthesis,
-    #[token(")")]
+    #[token(")", priority = 3)]
     RightParenthesis,
-    #[token("{")]
+    #[token("{", priority = 3)]
     LeftBrace,
-    #[token("}")]
+    #[token("}", priority = 3)]
     RightBrace,
-    #[token("[")]
+    #[token("[", priority = 3)]
     LeftBracket,
-    #[token("]")]
+    #[token("]", priority = 3)]
     RightBracket,
-    #[token(",")]
+    #[token(",", priority = 3)]
     Comma,
-    #[token("+")]
+    #[token("+", priority = 3)]
     Plus,
-    #[token("-")]
+    #[token("-", priority = 3)]
     Minus,
-    #[token("*")]
+    #[token("*", priority = 3)]
     Asterisk,
-    #[token("/")]
+    #[token("/", priority = 3)]
     Slash,
-    #[token("!")]
+    #[token("!", priority = 3)]
     Bang,
-    #[token(";")]
+    #[token(";", priority = 3)]
     Semicolon,
-    #[token("<")]
+    #[token("<", priority = 3)]
     Less,
-    #[token(">")]
+    #[token(">", priority = 3)]
     Greater,
-    #[token("=")]
+    #[token("=", priority = 3)]
     Equal,
 
     // Multi-character tokens
@@ -120,9 +125,9 @@ pub(crate) enum Token {
     GreaterEqual,
 
     // Literals
-    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", lex_identifier)]
+    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", priority=3, callback=lex_identifier)]
     Identifier(String),
-    #[regex(r#"\d[\d_]*"#, lex_int)]
+    #[regex(r#"\d[\d_]*"#, priority=3, callback=lex_int)]
     Int(i64),
     #[regex(r#"\d[\d_]*\.\d[\d_]*"#, lex_float)]
     Float(f64),
@@ -150,7 +155,7 @@ pub(crate) enum Token {
     False,
 }
 
-fn lex_identifier<'a>(lexer: &'a mut logos::Lexer<Token>) -> String {
+fn lex_identifier(lexer: &mut logos::Lexer<Token>) -> String {
     let slice = lexer.slice();
     slice.to_string()
 }
@@ -295,7 +300,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(r#""hello"#, Error::SyntaxError(SyntaxError::UnterminatedString))]
+    #[case(r#""hello"#, Error::SyntaxError(SyntaxError::UnterminatedString { span: (0, 6).into() }))]
     fn test_unterminated_string(#[case] input: &str, #[case] expected: Error) {
         let mut lexer = Lexer::new(input);
 
@@ -304,7 +309,7 @@ mod tests {
 
         match result.unwrap() {
             Ok(_) => panic!("Expected error, but got token"),
-            Err((error, _)) => {
+            Err(error) => {
                 assert_eq!(error, expected);
             }
         }
@@ -319,7 +324,7 @@ mod tests {
         let mut lexer = Lexer::new(input);
         let mut tokens = Vec::new();
 
-        while let Some(token) = lexer.next() {
+        for token in lexer {
             match token {
                 Ok((token, _)) => tokens.push(token),
                 Err(err) => panic!("Error: {:?}", err),
