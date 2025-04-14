@@ -1,4 +1,4 @@
-# Lang
+# toy
 
 This project is a simple toy programming language designed for learning and exploration.
 
@@ -13,9 +13,14 @@ Longer Term:
  * LSP
  * VM
  * Imports
- * Package management ala cargo
+ * Testing like pytest
+ * Debug Adapter Protocol
+ * JIT
+ * CLI ala cargo
+    * "Building" ie embed the interpreter and byte code into a binary
+    * Package management
+    * Support multiple versions of the language
  * Automatic documentation from docstring
-
 
 Language Features
 

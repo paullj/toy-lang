@@ -10,6 +10,8 @@ pub type SpannedToken = Spanned<Token>;
 pub(crate) struct Lexer<'a> {
     inner: logos::Lexer<'a, Token>,
     pending: Option<SpannedToken>,
+    paren_level: i32,
+    last_token: Option<Token>,
 }
 
 impl<'a> Lexer<'a> {
@@ -17,6 +19,25 @@ impl<'a> Lexer<'a> {
         Self {
             inner: Token::lexer(source),
             pending: None,
+            paren_level: 0,
+            last_token: None,
+        }
+    }
+
+    fn should_skip_newline(&self) -> bool {
+        // Skip newlines in these cases:
+        // 1. After operators that indicate expression continuation
+        // 2. After tokens that expect more input
+        // 3. Leading newlines
+        match &self.last_token {
+            Some(token) => matches!(token,
+                Token::Plus | Token::Minus | Token::Asterisk | Token::Slash |
+                Token::Equal | Token::EqualEqual | Token::BangEqual |
+                Token::Less | Token::LessEqual |
+                Token::Greater | Token::GreaterEqual |
+                Token::LeftBrace | Token::Comma
+            ),
+            None => true  // Skip leading newlines
         }
     }
 }
@@ -26,12 +47,31 @@ impl Iterator for Lexer<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(token) = self.pending.take() {
+            self.last_token = Some(token.0.clone());
             return Some(Ok(token));
         }
 
-        match self.inner.next()? {
+        let result = match self.inner.next()? {
             Ok(token) => {
                 let span = self.inner.span();
+                match &token {
+                    Token::LeftParenthesis | Token::LeftBrace | Token::LeftBracket => {
+                        self.paren_level += 1;
+                    }
+                    Token::RightParenthesis | Token::RightBrace | Token::RightBracket => {
+                        self.paren_level -= 1;
+                    }
+                    _ => {}
+                }
+
+                // Skip newlines after operators and in expressions
+                if token == Token::Newline && self.should_skip_newline() {
+                    self.last_token = Some(token.clone());
+                    return self.next();
+                }
+
+                // Update last_token after handling newlines
+                self.last_token = Some(token.clone());
                 Some(Ok((token, span)))
             }
             Err(err) => {
@@ -44,23 +84,6 @@ impl Iterator for Lexer<'_> {
                     })));
                 }
 
-                // TODO: Figure out why I did this and if it is needed.
-                // while let Some(token) = self.inner.next() {
-                //     let token = match token {
-                //         Ok(token) => token,
-                //         Err(err) => {
-                //             return Some(Err(err));
-                //         }
-                //     };
-                //     let span_new = self.inner.span();
-                //     if span.end == span_new.start {
-                //         span.end = span_new.end;
-                //     } else {
-                //         self.pending = Some((token, span_new));
-                //         break;
-                //     }
-                // }
-
                 Some(Err(match err {
                     Error::SyntaxError(SyntaxError::NonAsciiToken) => {
                         Error::SyntaxError(SyntaxError::UnexpectedToken {
@@ -71,47 +94,62 @@ impl Iterator for Lexer<'_> {
                     error => error,
                 }))
             }
+        };
+
+        // Only add a final newline if:
+        // 1. We're at the end of input
+        // 2. The last token wasn't a newline
+        // 3. We're in a multi-statement context
+        if let Some(Ok((token, span))) = &result {
+            if self.inner.remainder().is_empty() && token != &Token::Newline {
+                // Check if we're in a multi-statement context by looking at the source
+                let source = self.inner.source();
+                if  source.contains('\n') {
+                    let newline_span = span.end..span.end;
+                    self.pending = Some((Token::Newline, newline_span));
+                }
+            }
         }
+
+        result
     }
 }
 
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"//.*")]
-#[logos(skip r"[ \r\n\t\f]+")]
+#[logos(skip r"[ \t\f]+")]
 #[logos(error = Error)]
 pub(crate) enum Token {
     // Single-character tokens
-    #[token("(", priority = 3)]
+    #[token("(")]
     LeftParenthesis,
-    #[token(")", priority = 3)]
+    #[token(")")]
     RightParenthesis,
-    #[token("{", priority = 3)]
+    #[token("{")]
     LeftBrace,
-    #[token("}", priority = 3)]
+    #[token("}")]
     RightBrace,
-    #[token("[", priority = 3)]
+    #[token("[")]
     LeftBracket,
-    #[token("]", priority = 3)]
+    #[token("]")]
     RightBracket,
-    #[token(",", priority = 3)]
+    #[token(",")]
     Comma,
-    #[token("+", priority = 3)]
+    #[token("+")]
     Plus,
-    #[token("-", priority = 3)]
+    #[token("-")]
     Minus,
-    #[token("*", priority = 3)]
+    #[token("*")]
     Asterisk,
-    #[token("/", priority = 3)]
+    #[token("/")]
     Slash,
-    #[token("!", priority = 3)]
+    #[token("!")]
     Bang,
-    #[token(";", priority = 3)]
-    Semicolon,
-    #[token("<", priority = 3)]
+    #[token("<")]
     Less,
-    #[token(">", priority = 3)]
+    #[token(">")]
     Greater,
-    #[token("=", priority = 3)]
+    #[token("=")]
     Equal,
 
     // Multi-character tokens
@@ -125,9 +163,9 @@ pub(crate) enum Token {
     GreaterEqual,
 
     // Literals
-    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", priority=3, callback=lex_identifier)]
+    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", lex_identifier)]
     Identifier(String),
-    #[regex(r#"\d[\d_]*"#, priority=3, callback=lex_int)]
+    #[regex(r#"\d[\d_]*"#, lex_int)]
     Int(i64),
     #[regex(r#"\d[\d_]*\.\d[\d_]*"#, lex_float)]
     Float(f64),
@@ -153,6 +191,10 @@ pub(crate) enum Token {
     True,
     #[token("false")]
     False,
+
+    // Newline
+    #[regex(r"[\r\n]+")]
+    Newline,
 }
 
 fn lex_identifier(lexer: &mut logos::Lexer<Token>) -> String {
@@ -193,7 +235,6 @@ mod tests {
     #[case("*", Token::Asterisk)]
     #[case("/", Token::Slash)]
     #[case("!", Token::Bang)]
-    #[case(";", Token::Semicolon)]
     #[case("<", Token::Less)]
     #[case(">", Token::Greater)]
     #[case("=", Token::Equal)]
@@ -318,10 +359,48 @@ mod tests {
     #[rstest]
     #[case("1 + 2", vec![Token::Int(1), Token::Plus, Token::Int(2)])]
     #[case("1 + 2 * 3", vec![Token::Int(1), Token::Plus, Token::Int(2), Token::Asterisk, Token::Int(3)])]
-    #[case("let x = 1;", vec![Token::Let, Token::Identifier("x".to_string()), Token::Equal, Token::Int(1), Token::Semicolon])]
-    #[case("if (x == 1) { return x; }", vec![Token::If, Token::LeftParenthesis, Token::Identifier("x".to_string()), Token::EqualEqual, Token::Int(1), Token::RightParenthesis, Token::LeftBrace, Token::Return, Token::Identifier("x".to_string()), Token::Semicolon, Token::RightBrace])]
+    #[case("let x = 1", vec![Token::Let, Token::Identifier("x".to_string()), Token::Equal, Token::Int(1)])]
+    #[case("if (x == 1) { return x }", vec![Token::If, Token::LeftParenthesis, Token::Identifier("x".to_string()), Token::EqualEqual, Token::Int(1), Token::RightParenthesis, Token::LeftBrace, Token::Return, Token::Identifier("x".to_string()), Token::RightBrace])]
     fn test_lexer(#[case] input: &str, #[case] expected: Vec<Token>) {
-        let mut lexer = Lexer::new(input);
+        let lexer = Lexer::new(input);
+        let mut tokens = Vec::new();
+
+        for token in lexer {
+            match token {
+                Ok((token, _)) => tokens.push(token),
+                Err(err) => panic!("Error: {:?}", err),
+            }
+        }
+
+        assert_eq!(tokens, expected);
+    }
+
+    #[rstest]
+    #[case(
+        "let x = 1\nlet y = 2", 
+        vec![
+            Token::Let, Token::Identifier("x".to_string()), Token::Equal, Token::Int(1), Token::Newline,
+            Token::Let, Token::Identifier("y".to_string()), Token::Equal, Token::Int(2), Token::Newline,
+        ]
+    )]
+    #[case(
+        "let x = 1 +\n  2 +\n  3", 
+        vec![
+            Token::Let, Token::Identifier("x".to_string()), Token::Equal,
+            Token::Int(1), Token::Plus, Token::Int(2), Token::Plus, Token::Int(3), Token::Newline,
+        ]
+    )]
+    #[case(
+        "if (x == 1) {\n  return 1\n}", 
+        vec![
+            Token::If, Token::LeftParenthesis, Token::Identifier("x".to_string()), 
+            Token::EqualEqual, Token::Int(1), Token::RightParenthesis, Token::LeftBrace,
+            Token::Return, Token::Int(1), Token::Newline,
+            Token::RightBrace, Token::Newline,
+        ]
+    )]
+    fn test_newline_handling(#[case] input: &str, #[case] expected: Vec<Token>) {
+        let lexer = Lexer::new(input);
         let mut tokens = Vec::new();
 
         for token in lexer {

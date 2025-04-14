@@ -1,5 +1,6 @@
 mod error;
 mod syntax;
+mod machine;
 
 use syntax::{
     lex::{Lexer, Token},

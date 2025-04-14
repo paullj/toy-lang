@@ -49,11 +49,17 @@ impl<'a> Parser<'a> {
                 // }
             }
         };
-        // TODO: Move this tao a From trait for TokenTree or similar
+        // TODO: Move this to a From trait for Tree or similar. Or actually might not be able to since some of them aren't straight conversions
         let mut lhs = match token {
+            Token::String(s) => Tree::Atom(Atom::String(s.into())),
             Token::Int(n) => Tree::Atom(Atom::Int(n)),
             Token::Float(n) => Tree::Atom(Atom::Float(n)),
             Token::Identifier(id) => Tree::Atom(Atom::Identifier(id.into())),
+            Token::True => Tree::Atom(Atom::Bool(true)),
+            Token::False => Tree::Atom(Atom::Bool(false)),
+            Token::LeftParenthesis | Token::LeftBrace => {
+                todo!("grouping")
+            }
             Token::Return | Token::Bang | Token::Minus => {
                 let op = match token {
                     Token::Return => Operator::Return,
