@@ -12,6 +12,11 @@ use crate::{
 pub enum Op {
     Constant = 0,
     Return,
+    Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
 }
 
 impl From<Op> for u8 {
@@ -25,6 +30,11 @@ impl From<u8> for Op {
         match op {
             0 => Op::Constant,
             1 => Op::Return,
+            2 => Op::Negate,
+            3 => Op::Add,
+            4 => Op::Subtract,
+            5 => Op::Multiply,
+            6 => Op::Divide,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
@@ -35,6 +45,11 @@ impl Op {
         match self {
             Op::Constant => 2,
             Op::Return => 1,
+            Op::Negate => 1,
+            Op::Add => 2,
+            Op::Subtract => 2,
+            Op::Multiply => 2,
+            Op::Divide => 2,
         }
     }
 }
@@ -44,6 +59,11 @@ impl Display for Op {
         match self {
             Op::Return => write!(f, "RETURN"),
             Op::Constant => write!(f, "CONSTANT"),
+            Op::Negate => write!(f, "NEGATE"),
+            Op::Add => write!(f, "ADD"),
+            Op::Subtract => write!(f, "SUBTRACT"),
+            Op::Multiply => write!(f, "MULTIPLY"),
+            Op::Divide => write!(f, "DIVIDE"),
         }
     }
 }
@@ -154,7 +174,7 @@ mod tests {
     #[rstest]
     fn test_chunk_add_constant() {
         let mut chunk = Chunk::new();
-        chunk.write_constant(Value(1.0), &Span { start: 0, end: 1 });
+        chunk.write_constant(1.0, &Span { start: 0, end: 1 });
         assert_eq!(chunk.constants.len(), 1);
     }
 
@@ -164,7 +184,7 @@ mod tests {
 
         let span = Span { start: 0, end: 1 };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(Value(1.0), &span);
+        let constant = chunk.write_constant(1.0, &span);
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Return.into(), &span);
@@ -174,7 +194,7 @@ mod tests {
             end: 168,
         };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(Value(2.5), &span);
+        let constant = chunk.write_constant(2.5, &span);
         chunk.write_u8(constant, &span);
 
         let expected = [

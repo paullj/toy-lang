@@ -1,6 +1,6 @@
 mod error;
-mod syntax;
 mod machine;
+mod syntax;
 
 use syntax::{
     lex::{Lexer, Token},
@@ -34,6 +34,7 @@ enum Commands {
 use miette::{Diagnostic, Report};
 use thiserror::Error;
 
+// TODO: Move this into error module and make it more generic for a collections of errors
 #[derive(Diagnostic, Debug, Error)]
 #[error("errors occurred while lexing")]
 #[diagnostic()]
@@ -54,10 +55,7 @@ fn main() -> miette::Result<ExitCode> {
                 let lexer = Lexer::new(source);
 
                 let (tokens, errors): (Vec<_>, Vec<_>) = lexer.partition(Result::is_ok);
-                let errors: Vec<_> = errors
-                    .into_iter()
-                    .map(Result::unwrap_err)
-                    .collect();
+                let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
                 if !errors.is_empty() {
                     let report: Report = LexingError {
                         source_code: source.to_string(),
