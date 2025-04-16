@@ -1,10 +1,5 @@
-
+use crate::{error::Span, machine::rle::RleVec, machine::value::Value};
 use std::fmt::Display;
-use crate::{
-    error::Span,
-    machine::value::Value,
-    machine::rle::RleVec
-};
 
 /// Represents an operation for the virtual machine
 /// Each operation is a single byte, so we can use a u8 to represent them
@@ -126,18 +121,18 @@ impl Chunk {
         self.ops.push(byte);
         self.spans.push(span.clone());
     }
-        pub fn read_constant(&self, index: usize) -> Value {
+    pub fn read_constant(&self, index: usize) -> Value {
         self.constants[index]
     }
 
     /// Writes a constant to the [`Chunk`] and returns its index
-    pub fn write_constant(&mut self, value: Value, span: &Span) -> u8 {
+    pub fn write_constant(&mut self, value: Value) -> Option<u8> {
         // TODO: Check if the value already exists in the constants array
         // If it does, return the index
         let index = self.constants.len();
         self.constants.push(value);
         // TODO: Chunk currently only supports 256 constants
-        index as u8
+        u8::try_from(index).ok()
     }
 
     pub fn free(&mut self) {
@@ -145,8 +140,6 @@ impl Chunk {
         self.constants.clear();
         self.spans.clear();
     }
-    
-
 }
 
 #[cfg(test)]
@@ -174,7 +167,7 @@ mod tests {
     #[rstest]
     fn test_chunk_add_constant() {
         let mut chunk = Chunk::new();
-        chunk.write_constant(1.0, &Span { start: 0, end: 1 });
+        chunk.write_constant(1.0);
         assert_eq!(chunk.constants.len(), 1);
     }
 
@@ -184,7 +177,7 @@ mod tests {
 
         let span = Span { start: 0, end: 1 };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(1.0, &span);
+        let constant = chunk.write_constant(1.0).unwrap();
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Return.into(), &span);
@@ -194,7 +187,7 @@ mod tests {
             end: 168,
         };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(2.5, &span);
+        let constant = chunk.write_constant(2.5).unwrap();
         chunk.write_u8(constant, &span);
 
         let expected = [

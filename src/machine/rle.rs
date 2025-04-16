@@ -64,7 +64,11 @@ mod tests {
     use rstest::*;
 
     #[rstest]
+    #[case(vec![1], vec![1], vec![1])]
+    #[case(vec![1, 2, 3], vec![1, 2, 3], vec![1, 1, 1])]
+    #[case(vec![1, 1, 1], vec![1], vec![3])]
     #[case(vec![1, 1, 1, 2, 3, 3], vec![1, 2, 3], vec![3, 1, 2])]
+    #[case(vec![1, 2, 2, 2, 1], vec![1, 2, 1], vec![1, 3, 1])]
     fn test_rle_vec(
         #[case] values: Vec<usize>,
         #[case] expected_values: Vec<usize>,

@@ -1,4 +1,6 @@
-use miette::Context;
+use std::iter::Peekable;
+
+use miette::{Context, LabeledSpan};
 
 use crate::{
     Lexer, Token,
@@ -9,7 +11,7 @@ use crate::{
 use super::ast::{Operator, Tree};
 
 pub struct Parser<'a> {
-    lexer: std::iter::Peekable<Lexer<'a>>,
+    lexer: Peekable<Lexer<'a>>,
     _contents: &'a str,
 }
 
@@ -21,12 +23,34 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
-        self.parse_within(0)
+    fn expect(&mut self, expected: Token, unexpected: &str) -> Result<Token, miette::Error> {
+        self.expect_where(|next| next == expected, unexpected)
     }
 
-    fn parse_within(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
-        //  looking_for: Option<(Operator, u8)>,
+    fn expect_where(
+        &mut self,
+        mut check: impl FnMut(Token) -> bool,
+        unexpected: &str,
+    ) -> Result<Token, miette::Error> {
+        match self.lexer.next() {
+            Some(Ok((token, _))) if check(token.clone()) => Ok(token),
+            Some(Ok((token, span))) => Err(miette::miette! {
+                labels = vec![
+                    LabeledSpan::at(span, "here"),
+                ],
+                help = format!("Expected {token:?}"),
+                "{unexpected}",
+            }),
+            Some(Err(e)) => todo!("Figure out what error to return here"),
+            None => todo!("Figure out what error to return here"),
+        }
+    }
+
+    pub(crate) fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
+        self.parse_expression_within(0)
+    }
+
+    fn parse_expression_within(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
         let token = match self.lexer.next() {
             Some(Ok((token, _))) => token,
             Some(Err(err)) => {
@@ -57,8 +81,17 @@ impl<'a> Parser<'a> {
             Token::Identifier(id) => Tree::Atom(Atom::Identifier(id.into())),
             Token::True => Tree::Atom(Atom::Bool(true)),
             Token::False => Tree::Atom(Atom::Bool(false)),
-            Token::LeftParenthesis | Token::LeftBrace => {
-                todo!("grouping")
+            Token::LeftParenthesis => {
+                let lhs = self
+                    .parse_expression_within(0)
+                    .wrap_err("in bracketed expression")?;
+
+                self.expect(
+                    Token::RightParenthesis,
+                    "Unexpected end to bracketed expression",
+                )
+                .wrap_err("after bracketed expression")?;
+                Tree::Cons(Operator::Group, vec![lhs])
             }
             Token::Return | Token::Bang | Token::Minus => {
                 let op = match token {
@@ -67,8 +100,8 @@ impl<'a> Parser<'a> {
                     Token::Minus => Operator::Minus,
                     _ => unreachable!("unreachable from the outer match"),
                 };
-                let (_, r_bp) = prefix_binding_power(op);
-                match self.parse_within(r_bp) {
+                let (_, r_bp) = op.prefix_binding_power();
+                match self.parse_expression_within(r_bp) {
                     Ok(rhs) => Tree::Cons(op, vec![rhs]),
                     Err(_) => todo!(),
                 }
@@ -83,13 +116,14 @@ impl<'a> Parser<'a> {
                 match result {
                     Ok((token, _)) => {
                         let op = match token {
+                            Token::RightParenthesis | Token::Comma | Token::RightBrace => break,
                             Token::Plus => Operator::Plus,
                             Token::Minus => Operator::Minus,
                             Token::Asterisk => Operator::Asterisk,
                             Token::Slash => Operator::Slash,
                             _ => panic!("bad op: {:?}", token),
                         };
-                        if let Some((l_bp, ())) = postfix_binding_power(op) {
+                        if let Some((l_bp, ())) = op.postfix_binding_power() {
                             if l_bp < min_bp {
                                 break;
                             }
@@ -98,12 +132,12 @@ impl<'a> Parser<'a> {
                             continue;
                         }
 
-                        if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+                        if let Some((l_bp, r_bp)) = op.infix_binding_power() {
                             if l_bp < min_bp {
                                 break;
                             }
                             self.lexer.next();
-                            match self.parse_within(r_bp) {
+                            match self.parse_expression_within(r_bp) {
                                 Ok(rhs) => {
                                     lhs = Tree::Cons(op, vec![lhs, rhs]);
                                 }
@@ -122,41 +156,6 @@ impl<'a> Parser<'a> {
         }
         Ok(lhs)
     }
-}
-
-pub fn prefix_binding_power(op: Operator) -> ((), u8) {
-    match op {
-        Operator::Return => ((), 1),
-        Operator::Bang | Operator::Minus => ((), 11),
-        _ => panic!("bad op: {:?}", op),
-    }
-}
-
-pub fn postfix_binding_power(op: Operator) -> Option<(u8, ())> {
-    let res = match op {
-        Operator::Call => (13, ()),
-        _ => return None,
-    };
-    Some(res)
-}
-
-pub fn infix_binding_power(op: Operator) -> Option<(u8, u8)> {
-    let result = match op {
-        // '=' => (2, 1),
-        // '?' => (4, 3),
-        Operator::And | Operator::Or => (3, 4),
-        Operator::BangEqual
-        | Operator::EqualEqual
-        | Operator::Less
-        | Operator::LessEqual
-        | Operator::Greater
-        | Operator::GreaterEqual => (5, 6),
-        Operator::Plus | Operator::Minus => (7, 8),
-        Operator::Asterisk | Operator::Slash => (9, 10),
-        Operator::Field => (16, 15),
-        _ => return None,
-    };
-    Some(result)
 }
 
 #[cfg(test)]

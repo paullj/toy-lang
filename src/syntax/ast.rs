@@ -36,6 +36,43 @@ pub enum Operator {
     Group,
 }
 
+impl Operator {
+    pub fn prefix_binding_power(&self) -> ((), u8) {
+        match &self {
+            Self::Return => ((), 1),
+            Self::Bang | Self::Minus => ((), 11),
+            _ => panic!("bad op: {:?}", &self),
+        }
+    }
+
+    pub fn postfix_binding_power(&self) -> Option<(u8, ())> {
+        let res = match &self {
+            Self::Call => (13, ()),
+            _ => return None,
+        };
+        Some(res)
+    }
+
+    pub fn infix_binding_power(&self) -> Option<(u8, u8)> {
+        let result = match &self {
+            // '=' => (2, 1),
+            // '?' => (4, 3),
+            Self::And | Self::Or => (3, 4),
+            Self::BangEqual
+            | Self::EqualEqual
+            | Self::Less
+            | Self::LessEqual
+            | Self::Greater
+            | Self::GreaterEqual => (5, 6),
+            Self::Plus | Self::Minus => (7, 8),
+            Self::Asterisk | Self::Slash => (9, 10),
+            Self::Field => (16, 15),
+            _ => return None,
+        };
+        Some(result)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tree<'a> {
     Atom(Atom<'a>),
@@ -84,6 +121,7 @@ impl fmt::Display for Tree<'_> {
                     Operator::And => write!(f, "and"),
                     Operator::Or => write!(f, "or"),
                     Operator::Return => write!(f, "return"),
+                    Operator::Group => write!(f, "group"),
                     // TODO: Implement these,
                     Operator::Call => todo!(),
                     Operator::For => todo!(),
@@ -91,7 +129,6 @@ impl fmt::Display for Tree<'_> {
                     Operator::Field => todo!(),
                     Operator::Let => todo!(),
                     Operator::While => todo!(),
-                    Operator::Group => todo!(),
                 }?;
                 write!(
                     f,

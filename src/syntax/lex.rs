@@ -1,6 +1,7 @@
 use std::num::{ParseFloatError, ParseIntError};
 
 use logos::Logos;
+use miette::LabeledSpan;
 
 use crate::error::{Error, Spanned, SyntaxError};
 
@@ -30,14 +31,23 @@ impl<'a> Lexer<'a> {
         // 2. After tokens that expect more input
         // 3. Leading newlines
         match &self.last_token {
-            Some(token) => matches!(token,
-                Token::Plus | Token::Minus | Token::Asterisk | Token::Slash |
-                Token::Equal | Token::EqualEqual | Token::BangEqual |
-                Token::Less | Token::LessEqual |
-                Token::Greater | Token::GreaterEqual |
-                Token::LeftBrace | Token::Comma
+            Some(token) => matches!(
+                token,
+                Token::Plus
+                    | Token::Minus
+                    | Token::Asterisk
+                    | Token::Slash
+                    | Token::Equal
+                    | Token::EqualEqual
+                    | Token::BangEqual
+                    | Token::Less
+                    | Token::LessEqual
+                    | Token::Greater
+                    | Token::GreaterEqual
+                    | Token::LeftBrace
+                    | Token::Comma
             ),
-            None => true  // Skip leading newlines
+            None => true, // Skip leading newlines
         }
     }
 }
@@ -104,7 +114,7 @@ impl Iterator for Lexer<'_> {
             if self.inner.remainder().is_empty() && token != &Token::Newline {
                 // Check if we're in a multi-statement context by looking at the source
                 let source = self.inner.source();
-                if  source.contains('\n') {
+                if source.contains('\n') {
                     let newline_span = span.end..span.end;
                     self.pending = Some((Token::Newline, newline_span));
                 }

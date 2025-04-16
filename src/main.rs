@@ -2,6 +2,7 @@ mod error;
 mod machine;
 mod syntax;
 
+use machine::Machine;
 use syntax::{
     lex::{Lexer, Token},
     parse::Parser,
@@ -30,7 +31,9 @@ struct Arguments {
 enum Commands {
     Lex { source: String },
     Parse { source: String },
+    Interpret { source: String },
 }
+
 use miette::{Diagnostic, Report};
 use thiserror::Error;
 
@@ -85,14 +88,23 @@ fn main() -> miette::Result<ExitCode> {
                 let result = parser.parse();
 
                 match result {
-                    Ok(ast) => println!("AST: {:#?}", ast),
+                    Ok(ast) => println!("AST: {}", ast.to_string()),
                     Err(e) => {
                         return Err(e.with_source_code(source.to_string()));
                     }
                 }
             }
+            Commands::Interpret { source } => {
+                let mut machine = Machine::new();
+                let result = machine.interpret(source);
+                match result {
+                    Ok(_) => println!("Success"),
+                    Err(e) => println!("Error: {}", e),
+                }
+            }
         }
     }
+
     Ok(ExitCode::SUCCESS)
 }
 
