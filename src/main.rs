@@ -1,6 +1,8 @@
 mod error;
 mod machine;
 mod syntax;
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 
 use machine::Machine;
 use syntax::{
@@ -31,7 +33,6 @@ struct Arguments {
 enum Commands {
     Lex { source: String },
     Parse { source: String },
-    Interpret { source: String },
 }
 
 use miette::{Diagnostic, Report};
@@ -54,35 +55,37 @@ fn main() -> miette::Result<ExitCode> {
     // Commands for testing lexing and parsing
     if let Some(cmd) = &args.cmd {
         match cmd {
-            Commands::Lex { source } => {
-                let lexer = Lexer::new(source);
+            Commands::Lex { source: _ } => {}
+            // Commands::Lex { source } => {
+            //     let lexer = Lexer::new(source);
 
-                let (tokens, errors): (Vec<_>, Vec<_>) = lexer.partition(Result::is_ok);
-                let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
-                if !errors.is_empty() {
-                    let report: Report = LexingError {
-                        source_code: source.to_string(),
-                        errors,
-                    }
-                    .into();
-                    return Err(report);
-                }
+            //     let (tokens, errors): (Vec<_>, Vec<_>) = lexer.partition(Result::is_ok);
+            //     let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
+            //     if !errors.is_empty() {
+            //         let report: Report = LexingError {
+            //             source_code: source.to_string(),
+            //             errors,
+            //         }
+            //         .into();
+            //         return Err(report);
+            //     }
 
-                let tokens: Vec<_> = tokens
-                    .into_iter()
-                    .map(Result::unwrap)
-                    .map(|(token, _)| token)
-                    .collect();
-                println!(
-                    "Tokens: {}",
-                    tokens
-                        .iter()
-                        .map(|t| format!("{:?}", t))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                return Ok(ExitCode::SUCCESS);
-            }
+            //     let tokens: Vec<_> = tokens
+            //         .into_iter()
+            //         .map(Result::unwrap)
+            //         .map(|(token, _)| token)
+            //         .collect();
+
+            //     println!(
+            //         "Tokens: {}",
+            //         tokens
+            //             .iter()
+            //             .map(|t| format!("{:?}", t))
+            //             .collect::<Vec<_>>()
+            //             .join(", ")
+            //     );
+            //     return Ok(ExitCode::SUCCESS);
+            // }
             Commands::Parse { source } => {
                 let mut parser = Parser::new(source);
                 let result = parser.parse();
@@ -94,11 +97,37 @@ fn main() -> miette::Result<ExitCode> {
                     }
                 }
             }
-            Commands::Interpret { source } => {
+        }
+    }
+
+    match args.path {
+        Some(path) => {
+            todo!("Run file {}", path.display());
+        }
+        None => {
+            let mut editor = match DefaultEditor::new() {
+                Ok(editor) => editor,
+                Err(e) => {
+                    todo!("Failed to create editor: {}", e);
+                }
+            };
+            loop {
+                let line = match editor.readline(">>> ") {
+                    Ok(line) => line,
+                    Err(ReadlineError::Interrupted) => continue,
+                    Err(ReadlineError::Eof) => break,
+                    Err(e) => {
+                        todo!("Failed to read line: {}", e);
+                    }
+                };
                 let mut machine = Machine::new();
-                let result = machine.interpret(source);
+                match editor.add_history_entry(line.as_str()) {
+                    Ok(_) => {}
+                    Err(e) => todo!("Failed to add history entry: {}", e),
+                }
+                let result = machine.interpret(line.as_str());
                 match result {
-                    Ok(_) => println!("Success"),
+                    Ok(_) => continue,
                     Err(e) => return Err(e.into()),
                 }
             }
