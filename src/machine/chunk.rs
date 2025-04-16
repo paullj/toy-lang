@@ -2,16 +2,24 @@ use crate::{error::Span, machine::rle::RleVec, machine::value::Value};
 use std::fmt::Display;
 
 /// Represents an operation for the virtual machine
-/// Each operation is a single byte, so we can use a u8 to represent them
+/// We have limited operations, so we can use a u8 to represent them
 #[repr(u8)]
 pub enum Op {
     Constant = 0,
     Return,
+    True,
+    False,
+    Equal,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Not,
     Negate,
     Add,
     Subtract,
     Multiply,
-    Divide,
+    Divide = 14,
 }
 
 impl From<Op> for u8 {
@@ -23,28 +31,30 @@ impl From<Op> for u8 {
 impl From<u8> for Op {
     fn from(op: u8) -> Self {
         match op {
-            0 => Op::Constant,
-            1 => Op::Return,
-            2 => Op::Negate,
-            3 => Op::Add,
-            4 => Op::Subtract,
-            5 => Op::Multiply,
-            6 => Op::Divide,
+            // This is unsafe, but we know the range of opcodes
+            0..=14 => unsafe { std::mem::transmute(op) },
             _ => panic!("Unknown opcode: {}", op),
         }
     }
 }
-
 impl Op {
     pub fn size(&self) -> usize {
         match self {
             Op::Constant => 2,
             Op::Return => 1,
+            Op::True => 1,
+            Op::False => 1,
+            Op::Not => 1,
             Op::Negate => 1,
             Op::Add => 2,
             Op::Subtract => 2,
             Op::Multiply => 2,
             Op::Divide => 2,
+            Op::Equal => 2,
+            Op::Less => 2,
+            Op::Greater => 2,
+            Op::LessEqual => 2,
+            Op::GreaterEqual => 2,
         }
     }
 }
@@ -54,11 +64,19 @@ impl Display for Op {
         match self {
             Op::Return => write!(f, "RETURN"),
             Op::Constant => write!(f, "CONSTANT"),
+            Op::True => write!(f, "TRUE"),
+            Op::False => write!(f, "FALSE"),
+            Op::Not => write!(f, "NOT"),
             Op::Negate => write!(f, "NEGATE"),
             Op::Add => write!(f, "ADD"),
             Op::Subtract => write!(f, "SUBTRACT"),
             Op::Multiply => write!(f, "MULTIPLY"),
             Op::Divide => write!(f, "DIVIDE"),
+            Op::Equal => write!(f, "EQUAL"),
+            Op::Less => write!(f, "LESS"),
+            Op::Greater => write!(f, "GREATER"),
+            Op::LessEqual => write!(f, "LESS_EQUAL"),
+            Op::GreaterEqual => write!(f, "GREATER_EQUAL"),
         }
     }
 }
@@ -91,7 +109,7 @@ impl Display for Chunk {
                 Op::Constant => {
                     let constant_index = self.ops[offset + 1] as usize;
                     let constant_value = &self.constants[constant_index];
-                    write!(f, " {} '{}'", constant_index, constant_value.to_string())?;
+                    write!(f, " {} '{}'", constant_index, constant_value)?;
                 }
                 _ => {}
             }
@@ -167,7 +185,7 @@ mod tests {
     #[rstest]
     fn test_chunk_add_constant() {
         let mut chunk = Chunk::new();
-        chunk.write_constant(1.0);
+        chunk.write_constant(Value::Int(1));
         assert_eq!(chunk.constants.len(), 1);
     }
 
@@ -177,7 +195,7 @@ mod tests {
 
         let span = Span { start: 0, end: 1 };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(1.0).unwrap();
+        let constant = chunk.write_constant(Value::Int(1)).unwrap();
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Return.into(), &span);
@@ -187,7 +205,7 @@ mod tests {
             end: 168,
         };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(2.5).unwrap();
+        let constant = chunk.write_constant(Value::Float(2.5)).unwrap();
         chunk.write_u8(constant, &span);
 
         let expected = [

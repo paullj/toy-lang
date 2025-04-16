@@ -16,6 +16,9 @@ pub enum Error {
     #[error(transparent)]
     #[diagnostic(transparent)]
     SemanticError(SemanticError),
+
+    #[error(transparent)]
+    RuntimeError(RuntimeError),
 }
 
 impl Default for Error {
@@ -65,6 +68,18 @@ pub enum SemanticError {
     FloatParseError, // TODO: Does this need to be more specific?
 }
 
+#[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
+#[error("runtime error")]
+pub enum RuntimeError {
+    #[error("invalid operation")]
+    #[diagnostic(code(runtime::invalid_operation))]
+    #[diagnostic(help("{operation} is not defined for the given operands: {a} and {b}"))]
+    InvalidOperation {
+        operation: String,
+        a: String,
+        b: String,
+    },
+}
 impl From<ParseIntError> for Error {
     fn from(err: ParseIntError) -> Self {
         use std::num::IntErrorKind::*;

@@ -5,7 +5,10 @@ mod value;
 
 use chunk::{Chunk, Op};
 use compiler::compile;
+use miette::{Diagnostic, Error, Report};
 use value::Value;
+
+use crate::error::RuntimeError;
 
 /// A virtual machine that can execute a compiled chunk of code
 pub struct Machine {
@@ -23,13 +26,17 @@ impl Machine {
         }
     }
 
-    pub(crate) fn interpret(&mut self, source: &str) -> Result<(), String> {
-        let mut chunk = compile(source)?;
-        let result = self.run(&chunk);
-        result
+    pub(crate) fn interpret(&mut self, source: &str) -> miette::Result<()> {
+        match compile(source) {
+            Ok(chunk) => match self.run(&chunk) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e.into()),
+            },
+            Err(e) => todo!("Handle compile error: {}", e),
+        }
     }
 
-    fn run(&mut self, chunk: &Chunk) -> Result<(), String> {
+    fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
         // TODO: Add stack tracing https://craftinginterpreters.com/a-virtual-machine.html#stack-tracing
         loop {
             if let Some(code) = chunk.read_u8(self.ip) {
@@ -54,32 +61,52 @@ impl Machine {
                             todo!("Handle invalid constant index");
                         }
                     }
-                    Op::Negate => self.unary_op(|a| -a),
-                    Op::Add => self.binary_op(|a, b| a + b),
-                    Op::Subtract => self.binary_op(|a, b| a - b),
-                    Op::Multiply => self.binary_op(|a, b| a * b),
-                    Op::Divide => self.binary_op(|a, b| a / b),
+                    Op::True => self.stack.push(Value::Bool(true)),
+                    Op::False => self.stack.push(Value::Bool(false)),
+                    Op::Negate => self.unary_op(|a| -a)?,
+                    Op::Add => self.binary_op(|a, b| a + b)?,
+                    Op::Subtract => self.binary_op(|a, b| a - b)?,
+                    Op::Multiply => self.binary_op(|a, b| a * b)?,
+                    Op::Divide => self.binary_op(|a, b| a / b)?,
+                    Op::Not => self.unary_op(|a| !a)?,
+                    Op::Equal => self.binary_op(|a, b| Ok(Value::Bool(a == b)))?,
+                    Op::Less => self.binary_op(|a, b| Ok(Value::Bool(a < b)))?,
+                    Op::Greater => self.binary_op(|a, b| Ok(Value::Bool(a > b)))?,
+                    Op::LessEqual => self.binary_op(|a, b| Ok(Value::Bool(a <= b)))?,
+                    Op::GreaterEqual => self.binary_op(|a, b| Ok(Value::Bool(a >= b)))?,
                 }
             }
         }
     }
 
-    fn unary_op(&mut self, op: fn(a: Value) -> Value) {
+    fn peek(&self, distance: usize) -> Option<Value> {
+        self.stack.get(self.stack.len() - distance - 1).copied()
+    }
+
+    fn unary_op(
+        &mut self,
+        op: fn(a: Value) -> Result<Value, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         let a = self.stack.pop();
         if let Some(a) = a {
-            self.stack.push(op(a));
-            return;
+            let result = op(a)?;
+            self.stack.push(result);
+            return Ok(());
         }
         todo!("Handle empty stack on unary op");
     }
 
-    fn binary_op(&mut self, op: fn(a: Value, b: Value) -> Value) {
+    fn binary_op(
+        &mut self,
+        op: fn(a: Value, b: Value) -> Result<Value, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         let b = self.stack.pop();
         let a = self.stack.pop();
         if let Some(a) = a {
             if let Some(b) = b {
-                self.stack.push(op(a, b));
-                return;
+                let result = op(a, b)?;
+                self.stack.push(result);
+                return Ok(());
             }
         }
         todo!("Handle empty stack on binary op");
@@ -99,7 +126,7 @@ mod tests {
 
         let span = Span { start: 0, end: 1 };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(3.4).unwrap();
+        let constant = chunk.write_constant(Value::Float(3.4)).unwrap();
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Return.into(), &span);
@@ -115,7 +142,7 @@ mod tests {
 
         let span = Span { start: 0, end: 1 };
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(3.4).unwrap();
+        let constant = chunk.write_constant(Value::Float(3.4)).unwrap();
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Negate.into(), &span);
@@ -136,11 +163,11 @@ mod tests {
         let span = Span { start: 0, end: 1 };
 
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(3.4).unwrap();
+        let constant = chunk.write_constant(Value::Float(3.4)).unwrap();
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Constant.into(), &span);
-        let constant = chunk.write_constant(2.0).unwrap();
+        let constant = chunk.write_constant(Value::Float(2.0)).unwrap();
         chunk.write_u8(constant, &span);
 
         chunk.write_u8(Op::Add.into(), &span);

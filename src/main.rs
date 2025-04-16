@@ -99,7 +99,7 @@ fn main() -> miette::Result<ExitCode> {
                 let result = machine.interpret(source);
                 match result {
                     Ok(_) => println!("Success"),
-                    Err(e) => println!("Error: {}", e),
+                    Err(e) => return Err(e.into()),
                 }
             }
         }

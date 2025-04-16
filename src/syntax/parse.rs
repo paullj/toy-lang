@@ -121,6 +121,11 @@ impl<'a> Parser<'a> {
                             Token::Minus => Operator::Minus,
                             Token::Asterisk => Operator::Asterisk,
                             Token::Slash => Operator::Slash,
+                            Token::Less => Operator::Less,
+                            Token::Greater => Operator::Greater,
+                            Token::LessEqual => Operator::LessEqual,
+                            Token::GreaterEqual => Operator::GreaterEqual,
+                            Token::EqualEqual => Operator::EqualEqual,
                             _ => panic!("bad op: {:?}", token),
                         };
                         if let Some((l_bp, ())) = op.postfix_binding_power() {
