@@ -153,7 +153,7 @@ mod tests {
 
         // TODO: Assert that the value has been negated
 
-        assert_eq!(machine.stack.len(), 0);
+        assert_eq!(machine.stack.len(), 1);
     }
 
     #[rstest]
@@ -178,6 +178,6 @@ mod tests {
 
         // TODO: Assert that the value has been added correctly
 
-        assert_eq!(machine.stack.len(), 0);
+        assert_eq!(machine.stack.len(), 1);
     }
 }
