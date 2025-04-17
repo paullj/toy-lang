@@ -57,6 +57,14 @@ fn compile_atom<'a>(atom: &Atom<'a>, chunk: &mut Chunk, span: &Span) -> Result<(
                 return Err("Too many constants".to_string());
             }
         }
+        Atom::String(s) => {
+            if let Some(constant) = chunk.write_constant(Value::String(s.to_string())) {
+                chunk.write_u8(Op::Constant.into(), span);
+                chunk.write_u8(constant, span);
+            } else {
+                return Err("Too many constants".to_string());
+            }
+        }
         _ => todo!("Implement other atom types"),
     }
     Ok(())
@@ -140,6 +148,16 @@ fn compile_cons<'a>(
             compile_tree(&args[1], chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::GreaterEqual.into(), span);
+        }
+        (Operator::Echo, 1) => {
+            // Compile the inner expression
+            compile_tree(&args[0], chunk, span)?;
+            // Write the operation
+            chunk.write_u8(Op::Echo.into(), span);
+        }
+        (Operator::Return, _) => {
+            // Write the operation
+            chunk.write_u8(Op::Return.into(), span);
         }
         (op, _) => todo!("Implement other operators {op:?}"),
     }

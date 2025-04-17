@@ -43,20 +43,12 @@ impl Machine {
                 let op = Op::from(code);
                 self.ip += 1;
                 match op {
-                    Op::Return => {
-                        let value = self.stack.pop();
-                        if let Some(value) = value {
-                            println!("Return: {:?}", value);
-                        } else {
-                            todo!("Handle empty stack on return");
-                        }
-                        return Ok(());
-                    }
+                    Op::Return => return Ok(()),
                     Op::Constant => {
                         if let Some(i) = chunk.read_u8(self.ip) {
                             self.ip += 1;
                             let constant = chunk.read_constant(i as usize);
-                            self.stack.push(constant);
+                            self.stack.push(constant.clone());
                         } else {
                             todo!("Handle invalid constant index");
                         }
@@ -74,13 +66,20 @@ impl Machine {
                     Op::Greater => self.binary_op(|a, b| Ok(Value::Bool(a > b)))?,
                     Op::LessEqual => self.binary_op(|a, b| Ok(Value::Bool(a <= b)))?,
                     Op::GreaterEqual => self.binary_op(|a, b| Ok(Value::Bool(a >= b)))?,
+                    Op::Echo => {
+                        if let Some(value) = self.stack.pop() {
+                            println!("{}", value);
+                        } else {
+                            todo!("Handle empty stack on echo");
+                        }
+                    }
                 }
             }
         }
     }
 
     fn peek(&self, distance: usize) -> Option<Value> {
-        self.stack.get(self.stack.len() - distance - 1).copied()
+        self.stack.get(self.stack.len() - distance - 1).cloned()
     }
 
     fn unary_op(

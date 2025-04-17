@@ -6,11 +6,23 @@ use std::{
 
 use crate::error::RuntimeError;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub enum Value {
     Float(f64),
     Int(i64),
     Bool(bool),
+    String(String),
+}
+
+impl Clone for Value {
+     fn clone(&self) -> Self {
+         match self {
+             Value::Float(a) => Value::Float(*a),
+             Value::Int(a) => Value::Int(*a),
+             Value::Bool(a) => Value::Bool(*a),
+             Value::String(a) => Value::String(a.clone()),
+         }
+     }
 }
 
 impl Display for Value {
@@ -19,6 +31,7 @@ impl Display for Value {
             Value::Float(a) => write!(f, "{}", a),
             Value::Int(a) => write!(f, "{}", a),
             Value::Bool(a) => write!(f, "{}", a),
+            Value::String(a) => write!(f, "{}", a),
         }
     }
 }
@@ -32,10 +45,9 @@ impl Add for Value {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 + b)),
+            (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "+".to_string(),
-                a: self.to_string(),
-                b: other.to_string(),
+                operation: "+".to_string()
             }),
         }
     }
@@ -51,9 +63,7 @@ impl Sub for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 - b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "-".to_string(),
-                a: self.to_string(),
-                b: other.to_string(),
+                operation: "-".to_string()
             }),
         }
     }
@@ -69,9 +79,7 @@ impl Mul for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 * b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "*".to_string(),
-                a: self.to_string(),
-                b: other.to_string(),
+                operation: "*".to_string()
             }),
         }
     }
@@ -87,9 +95,7 @@ impl Div for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a / b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 / b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "/".to_string(),
-                a: self.to_string(),
-                b: other.to_string(),
+                operation: "/".to_string()
             }),
         }
     }
@@ -103,9 +109,7 @@ impl Neg for Value {
             Value::Float(a) => Ok(Value::Float(-a)),
             Value::Int(a) => Ok(Value::Int(-a)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "-".to_string(),
-                a: self.to_string(),
-                b: "".to_string(),
+                operation: "-".to_string()
             }),
         }
     }
@@ -118,9 +122,7 @@ impl Not for Value {
         match self {
             Value::Bool(a) => Ok(Value::Bool(!a)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "!".to_string(),
-                a: self.to_string(),
-                b: "".to_string(),
+                operation: "!".to_string()
             }),
         }
     }

@@ -73,11 +73,9 @@ pub enum SemanticError {
 pub enum RuntimeError {
     #[error("invalid operation")]
     #[diagnostic(code(runtime::invalid_operation))]
-    #[diagnostic(help("{operation} is not defined for the given operands: {a} and {b}"))]
+    #[diagnostic(help("{operation} is not defined for the given operands"))]
     InvalidOperation {
-        operation: String,
-        a: String,
-        b: String,
+        operation: String
     },
 }
 impl From<ParseIntError> for Error {

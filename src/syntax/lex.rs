@@ -201,6 +201,8 @@ pub(crate) enum Token {
     True,
     #[token("false")]
     False,
+    #[token("echo")]
+    Echo,
 
     // Newline
     #[regex(r"[\r\n]+")]

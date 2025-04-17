@@ -106,9 +106,15 @@ impl<'a> Parser<'a> {
                     Err(_) => todo!(),
                 }
             }
-            _ => {
-                // return Err(Error::new("unexpected token"));
-                panic!("Error: unexpected token");
+            Token::Echo => {
+                let (_, r_bp) = Operator::Echo.prefix_binding_power();
+                match self.parse_expression_within(r_bp) {
+                    Ok(rhs) => Tree::Cons(Operator::Echo, vec![rhs]),
+                    Err(_) => todo!(),
+                }
+            }
+            token => {
+                panic!("Error: unexpected token: {:?}", token);
             }
         };
         loop {

@@ -30,6 +30,7 @@ pub enum Operator {
     For,
     Fn,
     Return,
+    Echo,
     Field,
     Let,
     While,
@@ -39,7 +40,7 @@ pub enum Operator {
 impl Operator {
     pub fn prefix_binding_power(&self) -> ((), u8) {
         match &self {
-            Self::Return => ((), 1),
+            Self::Return | Self::Echo => ((), 1),
             Self::Bang | Self::Minus => ((), 11),
             _ => panic!("bad op: {:?}", &self),
         }
@@ -122,6 +123,7 @@ impl fmt::Display for Tree<'_> {
                     Operator::Or => write!(f, "or"),
                     Operator::Return => write!(f, "return"),
                     Operator::Group => write!(f, "group"),
+                    Operator::Echo => write!(f, "echo"),
                     // TODO: Implement these,
                     Operator::Call => todo!(),
                     Operator::For => todo!(),

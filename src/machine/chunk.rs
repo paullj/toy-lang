@@ -19,7 +19,8 @@ pub enum Op {
     Add,
     Subtract,
     Multiply,
-    Divide = 14,
+    Divide,
+    Echo,
 }
 
 impl From<Op> for u8 {
@@ -31,8 +32,22 @@ impl From<Op> for u8 {
 impl From<u8> for Op {
     fn from(op: u8) -> Self {
         match op {
-            // This is unsafe, but we know the range of opcodes
-            0..=14 => unsafe { std::mem::transmute(op) },
+            0 => Op::Constant,
+            1 => Op::Return,
+            2 => Op::True,
+            3 => Op::False,
+            4 => Op::Equal,
+            5 => Op::Less,
+            6 => Op::LessEqual,
+            7 => Op::Greater,
+            8 => Op::GreaterEqual,
+            9 => Op::Not,
+            10 => Op::Negate,
+            11 => Op::Add,
+            12 => Op::Subtract,
+            13 => Op::Multiply,
+            14 => Op::Divide,
+            15 => Op::Echo,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
@@ -55,6 +70,7 @@ impl Op {
             Op::Greater => 2,
             Op::LessEqual => 2,
             Op::GreaterEqual => 2,
+            Op::Echo => 1,
         }
     }
 }
@@ -77,6 +93,7 @@ impl Display for Op {
             Op::Greater => write!(f, "GREATER"),
             Op::LessEqual => write!(f, "LESS_EQUAL"),
             Op::GreaterEqual => write!(f, "GREATER_EQUAL"),
+            Op::Echo => write!(f, "ECHO"),
         }
     }
 }
@@ -139,8 +156,8 @@ impl Chunk {
         self.ops.push(byte);
         self.spans.push(span.clone());
     }
-    pub fn read_constant(&self, index: usize) -> Value {
-        self.constants[index]
+    pub fn read_constant(&self, index: usize) -> &Value {
+        &self.constants[index]
     }
 
     /// Writes a constant to the [`Chunk`] and returns its index
