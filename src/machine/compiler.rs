@@ -65,7 +65,14 @@ fn compile_atom<'a>(atom: &Atom<'a>, chunk: &mut Chunk, span: &Span) -> Result<(
                 return Err("Too many constants".to_string());
             }
         }
-        _ => todo!("Implement other atom types"),
+        Atom::Identifier(s) => {
+            if let Some(constant) = chunk.write_constant(Value::String(s.to_string())) {
+                chunk.write_u8(Op::GetGlobal.into(), span);
+                chunk.write_u8(constant, span);
+            } else {
+                return Err("Too many constants".to_string());
+            }
+        },
     }
     Ok(())
 }
@@ -77,25 +84,28 @@ fn compile_cons<'a>(
     span: &Span,
 ) -> Result<(), String> {
     // TODO: Make this better. Surely can't be the best way to do this.
-    match (op, args.len()) {
-        (Operator::Minus, 1) => {
+    match (op, args) {
+        (Operator::Minus, [value]) => {
             // Compile the inner expression
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&value, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::Negate.into(), span);
         }
-        (Operator::Bang, 1) => {
+        (Operator::Bang, [value]) => {
             // Compile the inner expression
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&value, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::Not.into(), span);
         }
-        (Operator::Plus | Operator::Minus | Operator::Asterisk | Operator::Slash, 2) => {
+        (
+            Operator::Plus | Operator::Minus | Operator::Asterisk | Operator::Slash,
+            [left, right],
+        ) => {
             // Compile left operand
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&left, chunk, span)?;
 
             // Compile right operand
-            compile_tree(&args[1], chunk, span)?;
+            compile_tree(&right, chunk, span)?;
 
             // Write the operation
             match op {
@@ -106,53 +116,54 @@ fn compile_cons<'a>(
                 _ => unreachable!(),
             }
         }
-        (Operator::Group, _) => {
-            // Just compile the inner expression
-            compile_tree(&args[0], chunk, span)?;
+        (Operator::Group, args) => {
+            for value in args {
+                compile_tree(&value, chunk, span)?;
+            }
         }
-        (Operator::EqualEqual, 2) => {
+        (Operator::EqualEqual, [left, right]) => {
             // Compile left operand
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&left, chunk, span)?;
             // Compile right operand
-            compile_tree(&args[1], chunk, span)?;
+            compile_tree(&right, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::Equal.into(), span);
         }
-        (Operator::Less, 2) => {
+        (Operator::Less, [left, right]) => {
             // Compile left operand
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&left, chunk, span)?;
             // Compile right operand
-            compile_tree(&args[1], chunk, span)?;
+            compile_tree(&right, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::Less.into(), span);
         }
-        (Operator::Greater, 2) => {
+        (Operator::Greater, [left, right]) => {
             // Compile left operand
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&left, chunk, span)?;
             // Compile right operand
-            compile_tree(&args[1], chunk, span)?;
+            compile_tree(&right, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::Greater.into(), span);
         }
-        (Operator::LessEqual, 2) => {
+        (Operator::LessEqual, [left, right]) => {
             // Compile left operand
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&left, chunk, span)?;
             // Compile right operand
-            compile_tree(&args[1], chunk, span)?;
+            compile_tree(&right, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::LessEqual.into(), span);
         }
-        (Operator::GreaterEqual, 2) => {
+        (Operator::GreaterEqual, [left, right]) => {
             // Compile left operand
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&left, chunk, span)?;
             // Compile right operand
-            compile_tree(&args[1], chunk, span)?;
+            compile_tree(&right, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::GreaterEqual.into(), span);
         }
-        (Operator::Echo, 1) => {
+        (Operator::Echo, [value]) => {
             // Compile the inner expression
-            compile_tree(&args[0], chunk, span)?;
+            compile_tree(&value, chunk, span)?;
             // Write the operation
             chunk.write_u8(Op::Echo.into(), span);
         }
@@ -160,11 +171,23 @@ fn compile_cons<'a>(
             // Write the operation
             chunk.write_u8(Op::Return.into(), span);
         }
-        (Operator::Let, 2) => {
-            // Compile the right hand side expression
-            compile_tree(&args[1], chunk, span)?;
-            // Write the operation
-            chunk.write_u8(Op::Pop.into(), span);
+        (Operator::Let, [name, value]) => {
+            if let Some(constant) = chunk.write_constant(Value::String(name.to_string())) {
+                compile_tree(&value, chunk, span)?;
+                chunk.write_u8(Op::DefineGlobal.into(), span);
+                chunk.write_u8(constant, span);
+            } else {
+                return Err("Too many constants".to_string());
+            }
+        }
+        (Operator::Equal, [name, value]) => {
+            if let Some(constant) = chunk.write_constant(Value::String(name.to_string())) {
+                compile_tree(&value, chunk, span)?;
+                chunk.write_u8(Op::SetGlobal.into(), span);
+                chunk.write_u8(constant, span);
+            } else {
+                return Err("Too many constants".to_string());
+            }
         }
         (op, _) => todo!("Implement other operators {op:?}"),
     }

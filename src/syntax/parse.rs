@@ -201,6 +201,7 @@ impl<'a> Parser<'a> {
                             Token::LessEqual => Operator::LessEqual,
                             Token::GreaterEqual => Operator::GreaterEqual,
                             Token::EqualEqual => Operator::EqualEqual,
+                            Token::Equal => Operator::Equal,
                             _ => panic!("bad op: {:?}", token),
                         };
                         if let Some((l_bp, ())) = op.postfix_binding_power() {

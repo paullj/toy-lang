@@ -22,6 +22,9 @@ pub enum Op {
     Divide,
     Echo,
     Pop,
+    DefineGlobal,
+    GetGlobal,
+    SetGlobal,
 }
 
 impl From<Op> for u8 {
@@ -50,6 +53,9 @@ impl From<u8> for Op {
             14 => Op::Divide,
             15 => Op::Echo,
             16 => Op::Pop,
+            17 => Op::DefineGlobal,
+            18 => Op::GetGlobal,
+            19 => Op::SetGlobal,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
@@ -74,6 +80,9 @@ impl Op {
             Op::GreaterEqual => 2,
             Op::Echo => 1,
             Op::Pop => 1,
+            Op::DefineGlobal => 1,
+            Op::GetGlobal => 1,
+            Op::SetGlobal => 1,
         }
     }
 }
@@ -98,6 +107,9 @@ impl Display for Op {
             Op::GreaterEqual => write!(f, "GREATER_EQUAL"),
             Op::Echo => write!(f, "ECHO"),
             Op::Pop => write!(f, "POP"),
+            Op::DefineGlobal => write!(f, "DEFINE_GLOBAL"),
+            Op::GetGlobal => write!(f, "GET_GLOBAL"),
+            Op::SetGlobal => write!(f, "SET_GLOBAL"),
         }
     }
 }
@@ -132,6 +144,16 @@ impl Display for Chunk {
                     let constant_value = &self.constants[constant_index];
                     write!(f, " {} '{}'", constant_index, constant_value)?;
                 }
+                Op::GetGlobal => {
+                    let global_index = self.ops[offset + 1] as usize;
+                    let global_value = &self.constants[global_index];
+                    write!(f, " {} '{}'", global_index, global_value)?;
+                }
+                Op::SetGlobal => {
+                    let global_index = self.ops[offset + 1] as usize;
+                    let global_value = &self.constants[global_index];
+                    write!(f, " {} '{}'", global_index, global_value)?;
+                    }
                 _ => {}
             }
             offset = offset + instruction.size();

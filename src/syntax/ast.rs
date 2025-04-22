@@ -20,6 +20,7 @@ pub enum Operator {
     Bang,
     Less,
     Greater,
+    Equal,
     BangEqual,
     LessEqual,
     GreaterEqual,
@@ -56,7 +57,7 @@ impl Operator {
 
     pub fn infix_binding_power(&self) -> Option<(u8, u8)> {
         let result = match &self {
-            // '=' => (2, 1),
+            Self::Equal => (2, 1),
             // '?' => (4, 3),
             Self::And | Self::Or => (3, 4),
             Self::BangEqual
@@ -125,7 +126,7 @@ impl fmt::Display for Tree<'_> {
                     Operator::Group => write!(f, "group"),
                     Operator::Echo => write!(f, "echo"),
                     Operator::Let => write!(f, "let"),
-                    // TODO: Implement these,
+                    Operator::Equal => write!(f, "="),
                     Operator::Call => todo!(),
                     Operator::For => todo!(),
                     Operator::Fn => todo!(),

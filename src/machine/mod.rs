@@ -3,6 +3,8 @@ mod compiler;
 mod rle;
 mod value;
 
+use std::collections::HashMap;
+
 use chunk::{Chunk, Op};
 use compiler::compile;
 use value::Value;
@@ -15,6 +17,7 @@ pub struct Machine {
     ip: usize,
     /// The stack of values
     stack: Vec<Value>,
+    globals: HashMap<String, Value>,
 }
 
 impl Machine {
@@ -22,6 +25,7 @@ impl Machine {
         Self {
             ip: 0,
             stack: Vec::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -35,6 +39,15 @@ impl Machine {
         }
     }
 
+    fn read_constant<'a>(&mut self, chunk: &'a Chunk) -> &'a Value {
+        if let Some(i) = chunk.read_u8(self.ip) {
+            self.ip += 1;
+            chunk.read_constant(i as usize)
+        } else {
+            todo!("Handle invalid constant index");
+        }
+    }
+
     fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
         // TODO: Add stack tracing https://craftinginterpreters.com/a-virtual-machine.html#stack-tracing
         loop {
@@ -44,17 +57,12 @@ impl Machine {
                 match op {
                     Op::Return => return Ok(()),
                     Op::Constant => {
-                        if let Some(i) = chunk.read_u8(self.ip) {
-                            self.ip += 1;
-                            let constant = chunk.read_constant(i as usize);
-                            self.stack.push(constant.clone());
-                        } else {
-                            todo!("Handle invalid constant index");
-                        }
+                        let constant = self.read_constant(chunk);
+                        self.stack.push(constant.clone());
                     }
                     Op::Pop => {
                         self.stack.pop();
-                    },
+                    }
                     Op::True => self.stack.push(Value::Bool(true)),
                     Op::False => self.stack.push(Value::Bool(false)),
                     Op::Negate => self.unary_op(|a| -a)?,
@@ -73,6 +81,38 @@ impl Machine {
                             println!("{}", value);
                         } else {
                             todo!("Handle empty stack on echo");
+                        }
+                    }
+                    Op::DefineGlobal => {
+                        let constant = self.read_constant(chunk);
+                        if let Value::String(s) = constant {
+                            if let Some(p) = self.stack.pop() {
+                                self.globals.insert(s.to_string(), p.clone());
+                            }
+                        } else {
+                            panic!("Unable to read constant from table");
+                        }
+                    }
+                    Op::GetGlobal => {
+                        let constant = self.read_constant(chunk);
+                        if let Value::String(s) = constant {
+                            if let Some(v) = self.globals.get(&s.to_string()) {
+                                self.stack.push(v.clone())
+                            } else {
+                                todo!("Handle undefined global variable");
+                            }
+                        } else {
+                            panic!("Unable to read constant from table");
+                        }
+                    }
+                    Op::SetGlobal => {
+                        let constant = self.read_constant(chunk);
+                        if let Value::String(s) = constant {
+                            if let Some(p) = self.stack.pop() {
+                                self.globals.insert(s.to_string(), p.clone());
+                            }
+                        } else {
+                            panic!("Unable to read constant from table");
                         }
                     }
                 }
