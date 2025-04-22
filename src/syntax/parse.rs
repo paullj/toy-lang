@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use miette::{Context, LabeledSpan};
+use miette::{Context, LabeledSpan, WrapErr};
 
 use crate::{
     Lexer, Token,
@@ -42,17 +42,86 @@ impl<'a> Parser<'a> {
                 "{unexpected}",
             }),
             Some(Err(e)) => todo!("Figure out what error to return here"),
-            None => todo!("Figure out what error to return here"),
+            None => Err(miette::miette! {
+                "{unexpected}",
+            }),
         }
     }
 
     pub(crate) fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
-        self.parse_expression_within(0)
+        let mut declarations = Vec::new();
+        loop {
+            let token = match self.lexer.peek() {
+                Some(Ok((token, _))) => token,
+                Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
+                None => break,
+            };
+            match token {
+                Token::EOL => {
+                    self.expect(Token::EOL, "expected EOL")?;
+                    continue;
+                }
+                _ => match self.parse_declaration() {
+                    Ok(tree) => declarations.push(tree),
+                    Err(err) => return Err(err),
+                },
+            };
+        }
+        return Ok(Tree::Cons(Operator::Group, declarations));
+    }
+
+    fn parse_declaration(&mut self) -> Result<Tree<'a>, miette::Error> {
+        let token = match self.lexer.peek() {
+            Some(Ok((token, _))) => token,
+            Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
+            None => todo!("Do some error handling in declaration parsing"),
+        };
+        match token {
+            // Variable declaration
+            Token::Let => {
+                self.expect(Token::Let, "expected let")?;
+                let token = self
+                    .expect_where(|t| matches!(t, Token::Identifier(_)), "expected identifier")
+                    .wrap_err("in variable assignment")?;
+
+                let ident = match token {
+                    Token::Identifier(name) => Tree::Atom(Atom::Identifier(name.into())),
+                    _ => unreachable!(),
+                };
+                self.expect(Token::Equal, "missing =")
+                    .wrap_err("in variable assignment")?;
+                let second = self
+                    .parse_expression_within(0)
+                    .wrap_err("in variable assignment expression")?;
+
+                Ok(Tree::Cons(Operator::Let, vec![ident, second]))
+            },
+            _ => self.parse_statement(),
+        }
+    }
+
+    fn parse_statement(&mut self) -> Result<Tree<'a>, miette::Error> {
+        let token = match self.lexer.peek() {
+            Some(Ok((token, _))) => token,
+            Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
+            None => todo!("Do some error handling in declaration parsing"),
+        };
+        match token {
+            Token::Echo => {
+                self.expect(Token::Echo, "expected echo")?;
+                let (_, r_bp) = Operator::Echo.prefix_binding_power();
+                match self.parse_expression_within(r_bp) {
+                    Ok(rhs) => Ok(Tree::Cons(Operator::Echo, vec![rhs])),
+                    Err(_) => todo!(),
+                }
+            }
+            _ => self.parse_expression_within(0),
+        }
     }
 
     fn parse_expression_within(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
-        let token = match self.lexer.next() {
-            Some(Ok((token, _))) => token,
+        let (token, span) = match self.lexer.next() {
+            Some(Ok((token, span))) => (token, span),
             Some(Err(err)) => {
                 // let message = if let Some((op, arg)) = looking_for {
                 //     format!("looking for argument {arg} for {op:?}")
@@ -73,7 +142,7 @@ impl<'a> Parser<'a> {
                 // }
             }
         };
-        // TODO: Move this to a From trait for Tree or similar. Or actually might not be able to since some of them aren't straight conversions
+
         let mut lhs = match token {
             Token::String(s) => Tree::Atom(Atom::String(s.into())),
             Token::Int(n) => Tree::Atom(Atom::Int(n)),
@@ -106,20 +175,20 @@ impl<'a> Parser<'a> {
                     Err(_) => todo!(),
                 }
             }
-            Token::Echo => {
-                let (_, r_bp) = Operator::Echo.prefix_binding_power();
-                match self.parse_expression_within(r_bp) {
-                    Ok(rhs) => Tree::Cons(Operator::Echo, vec![rhs]),
-                    Err(_) => todo!(),
-                }
-            }
-            token => {
-                panic!("Error: unexpected token: {:?}", token);
+            _ => {
+                return Err(miette::miette! {
+                    labels = vec![
+                        LabeledSpan::at(span, "here"),
+                    ],
+                    help = format!("Expected token {token}, found in expression"),
+                    "Unexpected token {token} in expression",
+                });
             }
         };
         loop {
             if let Some(result) = self.lexer.peek() {
                 match result {
+                    Ok((Token::EOL, _)) => break,
                     Ok((token, _)) => {
                         let op = match token {
                             Token::RightParenthesis | Token::Comma | Token::RightBrace => break,

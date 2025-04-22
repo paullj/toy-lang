@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt};
+use std::{borrow::Cow, fmt::{self, write}};
 
 use crate::Token;
 
@@ -124,12 +124,12 @@ impl fmt::Display for Tree<'_> {
                     Operator::Return => write!(f, "return"),
                     Operator::Group => write!(f, "group"),
                     Operator::Echo => write!(f, "echo"),
+                    Operator::Let => write!(f, "let"),
                     // TODO: Implement these,
                     Operator::Call => todo!(),
                     Operator::For => todo!(),
                     Operator::Fn => todo!(),
                     Operator::Field => todo!(),
-                    Operator::Let => todo!(),
                     Operator::While => todo!(),
                 }?;
                 write!(

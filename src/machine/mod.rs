@@ -5,7 +5,6 @@ mod value;
 
 use chunk::{Chunk, Op};
 use compiler::compile;
-use miette::{Diagnostic, Error, Report};
 use value::Value;
 
 use crate::error::RuntimeError;
@@ -53,6 +52,9 @@ impl Machine {
                             todo!("Handle invalid constant index");
                         }
                     }
+                    Op::Pop => {
+                        self.stack.pop();
+                    },
                     Op::True => self.stack.push(Value::Bool(true)),
                     Op::False => self.stack.push(Value::Bool(false)),
                     Op::Negate => self.unary_op(|a| -a)?,

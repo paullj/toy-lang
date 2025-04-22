@@ -76,6 +76,7 @@ fn compile_cons<'a>(
     chunk: &mut Chunk,
     span: &Span,
 ) -> Result<(), String> {
+    // TODO: Make this better. Surely can't be the best way to do this.
     match (op, args.len()) {
         (Operator::Minus, 1) => {
             // Compile the inner expression
@@ -158,6 +159,12 @@ fn compile_cons<'a>(
         (Operator::Return, _) => {
             // Write the operation
             chunk.write_u8(Op::Return.into(), span);
+        }
+        (Operator::Let, 2) => {
+            // Compile the right hand side expression
+            compile_tree(&args[1], chunk, span)?;
+            // Write the operation
+            chunk.write_u8(Op::Pop.into(), span);
         }
         (op, _) => todo!("Implement other operators {op:?}"),
     }

@@ -21,6 +21,7 @@ pub enum Op {
     Multiply,
     Divide,
     Echo,
+    Pop,
 }
 
 impl From<Op> for u8 {
@@ -48,6 +49,7 @@ impl From<u8> for Op {
             13 => Op::Multiply,
             14 => Op::Divide,
             15 => Op::Echo,
+            16 => Op::Pop,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
@@ -71,6 +73,7 @@ impl Op {
             Op::LessEqual => 2,
             Op::GreaterEqual => 2,
             Op::Echo => 1,
+            Op::Pop => 1,
         }
     }
 }
@@ -94,6 +97,7 @@ impl Display for Op {
             Op::LessEqual => write!(f, "LESS_EQUAL"),
             Op::GreaterEqual => write!(f, "GREATER_EQUAL"),
             Op::Echo => write!(f, "ECHO"),
+            Op::Pop => write!(f, "POP"),
         }
     }
 }

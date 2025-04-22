@@ -1,4 +1,4 @@
-use std::num::{ParseFloatError, ParseIntError};
+use std::{fmt::Display, num::{ParseFloatError, ParseIntError}};
 
 use logos::Logos;
 use miette::LabeledSpan;
@@ -75,7 +75,7 @@ impl Iterator for Lexer<'_> {
                 }
 
                 // Skip newlines after operators and in expressions
-                if token == Token::Newline && self.should_skip_newline() {
+                if token == Token::EOL && self.should_skip_newline() {
                     self.last_token = Some(token.clone());
                     return self.next();
                 }
@@ -111,14 +111,17 @@ impl Iterator for Lexer<'_> {
         // 2. The last token wasn't a newline
         // 3. We're in a multi-statement context
         if let Some(Ok((token, span))) = &result {
-            if self.inner.remainder().is_empty() && token != &Token::Newline {
+            if self.inner.remainder().is_empty() && token != &Token::EOL {
                 // Check if we're in a multi-statement context by looking at the source
                 let source = self.inner.source();
                 if source.contains('\n') {
                     let newline_span = span.end..span.end;
-                    self.pending = Some((Token::Newline, newline_span));
+                    self.pending = Some((Token::EOL, newline_span));
                 }
             }
+        } else {
+            let span = 0..1;
+            return Some(Ok((Token::EOL, span)));
         }
 
         result
@@ -204,9 +207,50 @@ pub(crate) enum Token {
     #[token("echo")]
     Echo,
 
-    // Newline
+    /// End of line
     #[regex(r"[\r\n]+")]
-    Newline,
+    EOL,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::LeftParenthesis => write!(f, "("),
+            Token::RightParenthesis => write!(f, ")"),
+            Token::LeftBrace => write!(f, "{{"),
+            Token::RightBrace => write!(f, "}}"),
+            Token::LeftBracket => write!(f, "["),
+            Token::RightBracket => write!(f, "]"),
+            Token::Comma => write!(f, ","),
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Asterisk => write!(f, "*"),
+            Token::Slash => write!(f, "/"),
+            Token::Bang => write!(f, "!"),
+            Token::Less => write!(f, "<"),
+            Token::Greater => write!(f, ">"),
+            Token::Equal => write!(f, "="),
+            Token::EqualEqual => write!(f, "=="),
+            Token::BangEqual => write!(f, "!="),
+            Token::LessEqual => write!(f, "<="),
+            Token::GreaterEqual => write!(f, ">="),
+            Token::Identifier(s) => write!(f, "{}", s),
+            Token::Int(i) => write!(f, "{}", i),
+            Token::Float(n) => write!(f, "{}", n),
+            Token::String(s) => write!(f, "\"{}\"", s),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
+            Token::While => write!(f, "while"),
+            Token::For => write!(f, "for"),
+            Token::Return => write!(f, "return"),
+            Token::Fn => write!(f, "fn"),
+            Token::Let => write!(f, "let"),
+            Token::True => write!(f, "true"),
+            Token::False => write!(f, "false"),
+            Token::Echo => write!(f, "echo"),
+            Token::EOL => write!(f, "EOL"),
+        }
+    }
 }
 
 fn lex_identifier(lexer: &mut logos::Lexer<Token>) -> String {
@@ -391,15 +435,15 @@ mod tests {
     #[case(
         "let x = 1\nlet y = 2", 
         vec![
-            Token::Let, Token::Identifier("x".to_string()), Token::Equal, Token::Int(1), Token::Newline,
-            Token::Let, Token::Identifier("y".to_string()), Token::Equal, Token::Int(2), Token::Newline,
+            Token::Let, Token::Identifier("x".to_string()), Token::Equal, Token::Int(1), Token::EOL,
+            Token::Let, Token::Identifier("y".to_string()), Token::Equal, Token::Int(2), Token::EOL,
         ]
     )]
     #[case(
         "let x = 1 +\n  2 +\n  3", 
         vec![
             Token::Let, Token::Identifier("x".to_string()), Token::Equal,
-            Token::Int(1), Token::Plus, Token::Int(2), Token::Plus, Token::Int(3), Token::Newline,
+            Token::Int(1), Token::Plus, Token::Int(2), Token::Plus, Token::Int(3), Token::EOL,
         ]
     )]
     #[case(
@@ -407,8 +451,8 @@ mod tests {
         vec![
             Token::If, Token::LeftParenthesis, Token::Identifier("x".to_string()), 
             Token::EqualEqual, Token::Int(1), Token::RightParenthesis, Token::LeftBrace,
-            Token::Return, Token::Int(1), Token::Newline,
-            Token::RightBrace, Token::Newline,
+            Token::Return, Token::Int(1), Token::EOL,
+            Token::RightBrace, Token::EOL,
         ]
     )]
     fn test_newline_handling(#[case] input: &str, #[case] expected: Vec<Token>) {
