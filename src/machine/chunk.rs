@@ -1,5 +1,5 @@
 use crate::{error::Span, machine::rle::RleVec, machine::value::Value};
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 /// Represents an operation for the virtual machine
 /// We have limited operations, so we can use a u8 to represent them
@@ -120,6 +120,7 @@ pub struct Chunk {
     ops: Vec<u8>,
     constants: Vec<Value>,
     spans: RleVec<Span>,
+    constants_map: HashMap<Value, u8>,
 }
 
 impl Display for Chunk {
@@ -170,6 +171,7 @@ impl Chunk {
             ops: Vec::new(),
             constants: Vec::new(),
             spans: RleVec::new(),
+            constants_map: HashMap::new(),
         }
     }
 
@@ -188,9 +190,18 @@ impl Chunk {
 
     /// Writes a constant to the [`Chunk`] and returns its index
     pub fn write_constant(&mut self, value: Value) -> Option<u8> {
-        // TODO: Check if the value already exists in the constants array
-        // If it does, return the index
+        if let Value::String(_) = value {
+            if let Some(&index) = self.constants_map.get(&value.clone()) {
+                return Some(index);
+            }
+        }
         let index = self.constants.len();
+        // Only store the mapping for strings
+        if let Value::String(_) = value {
+            if let Ok(idx) = u8::try_from(index) {
+                self.constants_map.insert(value.clone(), idx);
+            }
+        }
         self.constants.push(value);
         // TODO: Chunk currently only supports 256 constants
         u8::try_from(index).ok()

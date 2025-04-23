@@ -50,6 +50,38 @@ pub enum SyntaxError {
         span: SourceSpan,
     },
 
+    #[error("Invalid variable declaration")]
+    #[diagnostic(code(syntax::invalid_variable_declaration))]
+    InvalidVariableDeclaration {
+        #[label("Found {found} here instead of {expected}")]
+        span: SourceSpan,
+
+        expected: String,
+        found: String,
+
+        #[help]
+        suggestion: String,
+    },
+
+    #[error("Invalid operator usage")]
+    #[diagnostic(code(syntax::invalid_operator))]
+    InvalidOperator {
+        #[label("unexpected operator")]
+        span: SourceSpan,
+        #[help]
+        suggestion: String,
+    },
+
+    #[error("Missing token")]
+    #[diagnostic(code(syntax::missing_token))]
+    MissingToken {
+        #[label("expected {expected} here")]
+        span: SourceSpan,
+        expected: String,
+        #[help]
+        suggestion: String,
+    },
+
     #[error("unexpected end of file")]
     #[diagnostic(code(syntax::unexpected_eof))]
     UnexpectedEOF,
@@ -74,9 +106,7 @@ pub enum RuntimeError {
     #[error("invalid operation")]
     #[diagnostic(code(runtime::invalid_operation))]
     #[diagnostic(help("{operation} is not defined for the given operands"))]
-    InvalidOperation {
-        operation: String
-    },
+    InvalidOperation { operation: String },
 }
 impl From<ParseIntError> for Error {
     fn from(err: ParseIntError) -> Self {

@@ -43,9 +43,9 @@ use thiserror::Error;
 
 // TODO: Move this into error module and make it more generic for a collections of errors
 #[derive(Diagnostic, Debug, Error)]
-#[error("errors occurred while lexing")]
+#[error("An error occurred while lexing")]
 #[diagnostic()]
-pub struct LexingError {
+pub struct Errors {
     #[source_code]
     source_code: String,
     #[related]
@@ -59,12 +59,16 @@ fn main() -> miette::Result<ExitCode> {
     if let Some(cmd) = &args.cmd {
         match cmd {
             Commands::Lex { source } => {
-                lex(source).map_err(|e| miette::miette!("Failed to lex source: {}", e))?;
-                return Ok(ExitCode::SUCCESS);
+                match lex(source) {
+                    Ok(_) => return Ok(ExitCode::SUCCESS),
+                    Err(e) => return Err(e),
+                }
             }
             Commands::Parse { source } => {
-                parse(source).map_err(|e| miette::miette!("Failed to parse source {}", e).with_source_code(source.to_string()))?;
-                return Ok(ExitCode::SUCCESS);
+                match parse(source) {
+                    Ok(_) => return Ok(ExitCode::SUCCESS),
+                    Err(e) => return Err(e),
+                }
             }
         }
     }
@@ -110,7 +114,7 @@ fn lex(source: &str) -> miette::Result<()> {
     let (tokens, errors): (Vec<_>, Vec<_>) = lexer.partition(Result::is_ok);
     let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
     if !errors.is_empty() {
-        let report: Report = LexingError {
+        let report: Report = Errors {
             source_code: source.to_string(),
             errors,
         }

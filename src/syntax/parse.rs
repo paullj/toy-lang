@@ -79,23 +79,75 @@ impl<'a> Parser<'a> {
         match token {
             // Variable declaration
             Token::Let => {
-                self.expect(Token::Let, "expected let")?;
-                let token = self
-                    .expect_where(|t| matches!(t, Token::Identifier(_)), "expected identifier")
-                    .wrap_err("in variable assignment")?;
+                // Skip the let token
+                self.lexer.next();
 
-                let ident = match token {
-                    Token::Identifier(name) => Tree::Atom(Atom::Identifier(name.into())),
-                    _ => unreachable!(),
+                // Parse identifier
+                let identifier = match self.lexer.next() {
+                    Some(Ok((Token::Identifier(name), _))) => Tree::Atom(Atom::Identifier(name.into())),
+                    Some(Ok((token, span))) => {
+                        return Err(Error::SyntaxError(
+                            SyntaxError::InvalidVariableDeclaration {
+                                span: span.into(),
+                                expected: "identifier".into(),
+                                found: token.to_string(),
+                                suggestion:
+                                    "Variable declaration must be followed by a valid identifier"
+                                        .into(),
+                            },
+                        ))
+                        .wrap_err("in variable declaration");
+                    }
+                    Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
+                    None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
                 };
-                self.expect(Token::Equal, "missing =")
-                    .wrap_err("in variable assignment")?;
-                let second = self
-                    .parse_expression_within(0)
-                    .wrap_err("in variable assignment expression")?;
 
-                Ok(Tree::Cons(Operator::Let, vec![ident, second]))
-            },
+                // Parse assignment
+                match self.lexer.peek() {
+                    Some(Ok((Token::Equal, _))) => {
+                        self.expect(Token::Equal, "expected '='")?;
+                    }
+                    Some(Ok((Token::EqualEqual, span))) => {
+                        return Err(Error::SyntaxError(SyntaxError::InvalidOperator {
+                            span: span.clone().into(),
+                            suggestion: "Use single '=' for assignment, '==' is for comparison".into(),
+                        })).wrap_err("in variable declaration");
+                    }
+                    Some(Ok((token, span))) => {
+                        return Err(Error::SyntaxError(SyntaxError::MissingToken {
+                            span: span.clone().into(),
+                            expected: "=".into(),
+                            suggestion: "Variable declaration requires an initializer with '='".into(),
+                        })).wrap_err("in variable declaration");
+                    }
+                    Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
+                    None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
+                }
+
+                let value = self.parse_expression_within(0)
+                .wrap_err("in variable declaration expression")?;
+
+                // Expect EOL
+                match self.lexer.peek() {
+                    Some(Ok((Token::EOL, _))) => {
+                        self.expect(Token::EOL, "expected end of line")?;
+                    }
+                    Some(Ok((token, span))) => {
+                        return Err(Error::SyntaxError(SyntaxError::MissingToken {
+                            span: span.clone().into(),
+                            expected: "end of line".into(),
+                            suggestion: "Each declaration must end with a newline".into(),
+                        })).wrap_err("in variable declaration");
+                    }
+                    Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
+                    None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
+                }
+
+                Ok(Tree::Cons(Operator::Let, vec![
+                    identifier,
+                    value
+                ]))
+            }
             _ => self.parse_statement(),
         }
     }

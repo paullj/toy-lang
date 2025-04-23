@@ -1,7 +1,5 @@
 use std::{
-    cmp::Ordering,
-    fmt::Display,
-    ops::{Add, Div, Mul, Neg, Not, Sub},
+    cmp::Ordering, fmt::Display, hash::{Hash, Hasher}, ops::{Add, Div, Mul, Neg, Not, Sub}
 };
 
 use crate::error::RuntimeError;
@@ -134,10 +132,13 @@ impl PartialEq for Value {
             (Value::Float(a), Value::Float(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
             _ => false,
         }
     }
 }
+
+impl Eq for Value {}
 
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Value) -> Option<Ordering> {
@@ -150,3 +151,16 @@ impl PartialOrd for Value {
         }
     }
 }
+
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::Float(a) => todo!(),
+            Value::Int(a) => a.hash(state),
+            Value::Bool(a) => a.hash(state),
+            Value::String(a) => a.hash(state),
+        }
+    }
+}
+
+
