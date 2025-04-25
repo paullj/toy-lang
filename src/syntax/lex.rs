@@ -1,7 +1,6 @@
 use std::{fmt::Display, num::{ParseFloatError, ParseIntError}};
 
 use logos::Logos;
-use miette::LabeledSpan;
 
 use crate::error::{Error, Spanned, SyntaxError};
 
@@ -119,9 +118,6 @@ impl Iterator for Lexer<'_> {
                     self.pending = Some((Token::EOL, newline_span));
                 }
             }
-        } else {
-            let span = 0..1;
-            return Some(Ok((Token::EOL, span)));
         }
 
         result

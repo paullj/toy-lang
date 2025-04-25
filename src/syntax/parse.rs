@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use miette::{Context, LabeledSpan, WrapErr};
+use miette::{Context, LabeledSpan};
 
 use crate::{
     Lexer, Token,
@@ -49,6 +49,13 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
+        match self.parse_group(0) {
+            Ok(tree) => Ok(Tree::Cons(Operator::Root, tree, 0..0)),
+            Err(e) => Err(e)
+        }
+    }
+
+    fn parse_group(&mut self, min_bp: u8) -> Result<Vec<Tree<'a>>, miette::Error> {
         let mut declarations = Vec::new();
         loop {
             let token = match self.lexer.peek() {
@@ -61,18 +68,21 @@ impl<'a> Parser<'a> {
                     self.expect(Token::EOL, "expected EOL")?;
                     continue;
                 }
-                _ => match self.parse_declaration() {
+                Token::RightBrace => {
+                    break;
+                }
+                _ => match self.parse_declaration(min_bp) {
                     Ok(tree) => declarations.push(tree),
                     Err(err) => return Err(err),
                 },
             };
         }
-        return Ok(Tree::Cons(Operator::Group, declarations));
+        return Ok(declarations);
     }
 
-    fn parse_declaration(&mut self) -> Result<Tree<'a>, miette::Error> {
-        let token = match self.lexer.peek() {
-            Some(Ok((token, _))) => token,
+    fn parse_declaration(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
+        let (token, span) = match self.lexer.peek() {
+            Some(Ok((token, span))) => (token, span.clone()),
             Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
             None => todo!("Do some error handling in declaration parsing"),
         };
@@ -84,7 +94,9 @@ impl<'a> Parser<'a> {
 
                 // Parse identifier
                 let identifier = match self.lexer.next() {
-                    Some(Ok((Token::Identifier(name), _))) => Tree::Atom(Atom::Identifier(name.into())),
+                    Some(Ok((Token::Identifier(name), span))) => {
+                        Tree::Atom(Atom::Identifier(name.into()), span)
+                    }
                     Some(Ok((token, span))) => {
                         return Err(Error::SyntaxError(
                             SyntaxError::InvalidVariableDeclaration {
@@ -104,57 +116,43 @@ impl<'a> Parser<'a> {
 
                 // Parse assignment
                 match self.lexer.peek() {
-                    Some(Ok((Token::Equal, _))) => {
+                    Some(Ok((Token::Equal, span))) => {
                         self.expect(Token::Equal, "expected '='")?;
                     }
                     Some(Ok((Token::EqualEqual, span))) => {
                         return Err(Error::SyntaxError(SyntaxError::InvalidOperator {
                             span: span.clone().into(),
-                            suggestion: "Use single '=' for assignment, '==' is for comparison".into(),
-                        })).wrap_err("in variable declaration");
+                            suggestion: "Use single '=' for assignment, '==' is for comparison"
+                                .into(),
+                        }))
+                        .wrap_err("in variable declaration");
                     }
                     Some(Ok((token, span))) => {
                         return Err(Error::SyntaxError(SyntaxError::MissingToken {
                             span: span.clone().into(),
                             expected: "=".into(),
-                            suggestion: "Variable declaration requires an initializer with '='".into(),
-                        })).wrap_err("in variable declaration");
+                            suggestion: "Variable declaration requires an initializer with '='"
+                                .into(),
+                        }))
+                        .wrap_err("in variable declaration");
                     }
                     Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
                     None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
                 }
 
-                let value = self.parse_expression_within(0)
-                .wrap_err("in variable declaration expression")?;
+                let value = self
+                    .parse_expression_within(0)
+                    .wrap_err("in variable declaration expression")?;
 
-                // Expect EOL
-                match self.lexer.peek() {
-                    Some(Ok((Token::EOL, _))) => {
-                        self.expect(Token::EOL, "expected end of line")?;
-                    }
-                    Some(Ok((token, span))) => {
-                        return Err(Error::SyntaxError(SyntaxError::MissingToken {
-                            span: span.clone().into(),
-                            expected: "end of line".into(),
-                            suggestion: "Each declaration must end with a newline".into(),
-                        })).wrap_err("in variable declaration");
-                    }
-                    Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
-                    None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
-                }
-
-                Ok(Tree::Cons(Operator::Let, vec![
-                    identifier,
-                    value
-                ]))
+                Ok(Tree::Cons(Operator::Let, vec![identifier, value], span))
             }
-            _ => self.parse_statement(),
+            _ => self.parse_statement(min_bp),
         }
     }
 
-    fn parse_statement(&mut self) -> Result<Tree<'a>, miette::Error> {
-        let token = match self.lexer.peek() {
-            Some(Ok((token, _))) => token,
+    fn parse_statement(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
+        let (token, span) = match self.lexer.peek() {
+            Some(Ok((token, span))) => (token, span.clone()),
             Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
             None => todo!("Do some error handling in declaration parsing"),
         };
@@ -163,9 +161,15 @@ impl<'a> Parser<'a> {
                 self.expect(Token::Echo, "expected echo")?;
                 let (_, r_bp) = Operator::Echo.prefix_binding_power();
                 match self.parse_expression_within(r_bp) {
-                    Ok(rhs) => Ok(Tree::Cons(Operator::Echo, vec![rhs])),
+                    Ok(rhs) => Ok(Tree::Cons(Operator::Echo, vec![rhs], span)),
                     Err(_) => todo!(),
                 }
+            }
+            Token::LeftBrace => {
+                self.expect(Token::LeftBrace, "expected '{'")?;
+                let group = self.parse_group(min_bp)?;
+                self.expect(Token::RightBrace, "expected '}'")?;
+                Ok(Tree::Cons(Operator::Group, group, span))
             }
             _ => self.parse_expression_within(0),
         }
@@ -196,12 +200,12 @@ impl<'a> Parser<'a> {
         };
 
         let mut lhs = match token {
-            Token::String(s) => Tree::Atom(Atom::String(s.into())),
-            Token::Int(n) => Tree::Atom(Atom::Int(n)),
-            Token::Float(n) => Tree::Atom(Atom::Float(n)),
-            Token::Identifier(id) => Tree::Atom(Atom::Identifier(id.into())),
-            Token::True => Tree::Atom(Atom::Bool(true)),
-            Token::False => Tree::Atom(Atom::Bool(false)),
+            Token::String(s) => Tree::Atom(Atom::String(s.into()), span),
+            Token::Int(n) => Tree::Atom(Atom::Int(n), span),
+            Token::Float(n) => Tree::Atom(Atom::Float(n), span),
+            Token::Identifier(id) => Tree::Atom(Atom::Identifier(id.into()), span),
+            Token::True => Tree::Atom(Atom::Bool(true), span),
+            Token::False => Tree::Atom(Atom::Bool(false), span),
             Token::LeftParenthesis => {
                 let lhs = self
                     .parse_expression_within(0)
@@ -212,7 +216,8 @@ impl<'a> Parser<'a> {
                     "Unexpected end to bracketed expression",
                 )
                 .wrap_err("after bracketed expression")?;
-                Tree::Cons(Operator::Group, vec![lhs])
+        
+                Tree::Cons(Operator::Group, vec![lhs], span)
             }
             Token::Return | Token::Bang | Token::Minus => {
                 let op = match token {
@@ -223,7 +228,7 @@ impl<'a> Parser<'a> {
                 };
                 let (_, r_bp) = op.prefix_binding_power();
                 match self.parse_expression_within(r_bp) {
-                    Ok(rhs) => Tree::Cons(op, vec![rhs]),
+                    Ok(rhs) => Tree::Cons(op, vec![rhs], span),
                     Err(_) => todo!(),
                 }
             }
@@ -241,7 +246,7 @@ impl<'a> Parser<'a> {
             if let Some(result) = self.lexer.peek() {
                 match result {
                     Ok((Token::EOL, _)) => break,
-                    Ok((token, _)) => {
+                    Ok((token, span)) => {
                         let op = match token {
                             Token::RightParenthesis | Token::Comma | Token::RightBrace => break,
                             Token::Plus => Operator::Plus,
@@ -256,12 +261,13 @@ impl<'a> Parser<'a> {
                             Token::Equal => Operator::Equal,
                             _ => panic!("bad op: {:?}", token),
                         };
+                        let span = span.clone();
                         if let Some((l_bp, ())) = op.postfix_binding_power() {
                             if l_bp < min_bp {
                                 break;
                             }
                             self.lexer.next();
-                            lhs = Tree::Cons(op, vec![lhs]);
+                            lhs = Tree::Cons(op, vec![lhs], span);
                             continue;
                         }
 
@@ -272,7 +278,7 @@ impl<'a> Parser<'a> {
                             self.lexer.next();
                             match self.parse_expression_within(r_bp) {
                                 Ok(rhs) => {
-                                    lhs = Tree::Cons(op, vec![lhs, rhs]);
+                                    lhs = Tree::Cons(op, vec![lhs, rhs], span);
                                 }
                                 Err(err) => return Err(err).wrap_err(""),
                             }

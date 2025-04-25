@@ -22,9 +22,12 @@ pub enum Op {
     Divide,
     Echo,
     Pop,
+    PopN,
     DefineGlobal,
     GetGlobal,
     SetGlobal,
+    GetLocal,
+    SetLocal,
 }
 
 impl From<Op> for u8 {
@@ -53,13 +56,17 @@ impl From<u8> for Op {
             14 => Op::Divide,
             15 => Op::Echo,
             16 => Op::Pop,
-            17 => Op::DefineGlobal,
-            18 => Op::GetGlobal,
-            19 => Op::SetGlobal,
+            17 => Op::PopN,
+            18 => Op::DefineGlobal,
+            19 => Op::GetGlobal,
+            20 => Op::SetGlobal,
+            21 => Op::GetLocal,
+            22 => Op::SetLocal,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
 }
+
 impl Op {
     pub fn size(&self) -> usize {
         match self {
@@ -69,20 +76,23 @@ impl Op {
             Op::False => 1,
             Op::Not => 1,
             Op::Negate => 1,
-            Op::Add => 2,
-            Op::Subtract => 2,
-            Op::Multiply => 2,
-            Op::Divide => 2,
-            Op::Equal => 2,
-            Op::Less => 2,
-            Op::Greater => 2,
-            Op::LessEqual => 2,
-            Op::GreaterEqual => 2,
+            Op::Add => 1,
+            Op::Subtract => 1,
+            Op::Multiply => 1,
+            Op::Divide => 1,
+            Op::Equal => 1,
+            Op::Greater => 1,
+            Op::Less => 1,
+            Op::LessEqual => 1,
+            Op::GreaterEqual => 1,
             Op::Echo => 1,
             Op::Pop => 1,
-            Op::DefineGlobal => 1,
-            Op::GetGlobal => 1,
-            Op::SetGlobal => 1,
+            Op::PopN => 2,
+            Op::DefineGlobal => 2,
+            Op::GetGlobal => 2,
+            Op::SetGlobal => 2,
+            Op::GetLocal => 2,
+            Op::SetLocal => 2,
         }
     }
 }
@@ -110,6 +120,9 @@ impl Display for Op {
             Op::DefineGlobal => write!(f, "DEFINE_GLOBAL"),
             Op::GetGlobal => write!(f, "GET_GLOBAL"),
             Op::SetGlobal => write!(f, "SET_GLOBAL"),
+            Op::GetLocal => write!(f, "GET_LOCAL"),
+            Op::SetLocal => write!(f, "SET_LOCAL"),
+            Op::PopN => write!(f, "POP_N"),
         }
     }
 }
@@ -127,15 +140,17 @@ impl Display for Chunk {
     // TODO: Move this into a disassemble function
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset = 0;
+        writeln!(f, "OFFS    SPAN OP                N VALUE")?;
+        writeln!(f, "----------------------------------------")?;
         while offset < self.ops.len() {
             write!(f, "{:04}", offset)?;
             // TODO: Make this a try from
             let instruction = Op::from(self.ops[offset]);
             let span = self.spans.get(offset).unwrap();
             if offset > 0 && span.start == self.spans.get(offset - 1).unwrap().start {
-                write!(f, "        |")?;
+                write!(f, "       |")?;
             } else {
-                write!(f, " {:>4} {:>3}", span.start, span.len())?;
+                write!(f, " {:>4} {:>2}", span.start, span.len())?;
             }
 
             write!(f, " {:<16}", instruction.to_string())?;
@@ -143,18 +158,23 @@ impl Display for Chunk {
                 Op::Constant => {
                     let constant_index = self.ops[offset + 1] as usize;
                     let constant_value = &self.constants[constant_index];
-                    write!(f, " {} '{}'", constant_index, constant_value)?;
+                    write!(f, " {:>2} {}", constant_index, constant_value)?;
+                }
+                Op::DefineGlobal => {
+                    let global_index = self.ops[offset + 1] as usize;
+                    let global_value = &self.constants[global_index];
+                    write!(f, " {:>2} {}", global_index, global_value)?;
                 }
                 Op::GetGlobal => {
                     let global_index = self.ops[offset + 1] as usize;
                     let global_value = &self.constants[global_index];
-                    write!(f, " {} '{}'", global_index, global_value)?;
+                    write!(f, " {:>2} {}", global_index, global_value)?;
                 }
-                Op::SetGlobal => {
-                    let global_index = self.ops[offset + 1] as usize;
-                    let global_value = &self.constants[global_index];
-                    write!(f, " {} '{}'", global_index, global_value)?;
-                    }
+                Op::PopN => {
+                    let n = self.ops[offset + 1] as usize;
+                    write!(f, "    {}", n)?;
+
+                }
                 _ => {}
             }
             offset = offset + instruction.size();
@@ -205,6 +225,10 @@ impl Chunk {
         self.constants.push(value);
         // TODO: Chunk currently only supports 256 constants
         u8::try_from(index).ok()
+    }
+
+    pub fn disassemble(&mut self) -> String {
+        self.to_string()
     }
 
     pub fn free(&mut self) {

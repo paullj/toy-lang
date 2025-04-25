@@ -1,6 +1,6 @@
-use std::{borrow::Cow, fmt::{self, write}};
+use std::{borrow::Cow, fmt};
 
-use crate::Token;
+use crate::{error::Span, Token};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Atom<'a> {
@@ -36,6 +36,7 @@ pub enum Operator {
     Let,
     While,
     Group,
+    Root,
 }
 
 impl Operator {
@@ -77,8 +78,8 @@ impl Operator {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tree<'a> {
-    Atom(Atom<'a>),
-    Cons(Operator, Vec<Tree<'a>>),
+    Atom(Atom<'a>, Span),
+    Cons(Operator, Vec<Tree<'a>>, Span),
     Fn {
         name: Atom<'a>,
         parameters: Vec<Token>,
@@ -99,14 +100,14 @@ impl fmt::Display for Tree<'_> {
     // Display the tree in reverse polish notation
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Tree::Atom(atom) => match atom {
+            Tree::Atom(atom, _) => match atom {
                 Atom::String(s) => write!(f, "\"{}\"", s),
                 Atom::Float(n) => write!(f, "{}", n),
                 Atom::Int(n) => write!(f, "{}", n),
                 Atom::Bool(b) => write!(f, "{}", b),
                 Atom::Identifier(id) => write!(f, "{}", id),
             },
-            Tree::Cons(operator, tree) => {
+            Tree::Cons(operator, tree, _) => {
                 write!(f, "(")?;
                 match operator {
                     Operator::Plus => write!(f, "+"),
@@ -127,6 +128,7 @@ impl fmt::Display for Tree<'_> {
                     Operator::Echo => write!(f, "echo"),
                     Operator::Let => write!(f, "let"),
                     Operator::Equal => write!(f, "="),
+                    Operator::Root => write!(f, "root"),
                     Operator::Call => todo!(),
                     Operator::For => todo!(),
                     Operator::Fn => todo!(),

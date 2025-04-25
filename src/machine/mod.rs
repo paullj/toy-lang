@@ -1,12 +1,12 @@
 mod chunk;
-mod compiler;
+pub mod compiler;
 mod rle;
 mod value;
 
 use std::collections::HashMap;
 
 use chunk::{Chunk, Op};
-use compiler::compile;
+use compiler::Compiler;
 use value::Value;
 
 use crate::error::RuntimeError;
@@ -30,13 +30,20 @@ impl Machine {
     }
 
     pub(crate) fn interpret(&mut self, source: &str) -> miette::Result<()> {
-        match compile(source) {
+        let compiler = Compiler::new(source);
+        match compiler.compile() {
             Ok(chunk) => match self.run(&chunk) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e.into()),
             },
             Err(e) => todo!("Handle compile error: {}", e),
         }
+    }
+
+    fn read_u8(&mut self, chunk: &Chunk) -> Option<u8> {
+        let code = chunk.read_u8(self.ip);
+        self.ip += 1;
+        code
     }
 
     fn read_constant<'a>(&mut self, chunk: &'a Chunk) -> &'a Value {
@@ -51,10 +58,8 @@ impl Machine {
     fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
         // TODO: Add stack tracing https://craftinginterpreters.com/a-virtual-machine.html#stack-tracing
         loop {
-            if let Some(code) = chunk.read_u8(self.ip) {
-                let op = Op::from(code);
-                self.ip += 1;
-                match op {
+            if let Some(code) = self.read_u8(chunk) {
+                match Op::from(code) {
                     Op::Return => return Ok(()),
                     Op::Constant => {
                         let constant = self.read_constant(chunk);
@@ -62,6 +67,11 @@ impl Machine {
                     }
                     Op::Pop => {
                         self.stack.pop();
+                    }
+                    Op::PopN => {
+                        if let Some(n) = self.read_u8(chunk) {
+                            self.stack.truncate(self.stack.len() - n as usize);
+                        }
                     }
                     Op::True => self.stack.push(Value::Bool(true)),
                     Op::False => self.stack.push(Value::Bool(false)),
@@ -113,6 +123,18 @@ impl Machine {
                             }
                         } else {
                             panic!("Unable to read constant from table");
+                        }
+                    }
+                    Op::GetLocal => {
+                        if let Some(index) = self.read_u8(chunk) {
+                            self.stack.push(self.stack[index as usize].clone());
+                        }
+                    }
+                    Op::SetLocal => {
+                        if let Some(index) = self.read_u8(chunk) {
+                            if let Some(value) = self.peek(0) {
+                                self.stack[index as usize] = value;
+                            }
                         }
                     }
                 }

@@ -9,7 +9,7 @@ pub enum Value {
     Float(f64),
     Int(i64),
     Bool(bool),
-    String(String),
+    String(String),   
 }
 
 impl Clone for Value {
@@ -155,7 +155,17 @@ impl PartialOrd for Value {
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Value::Float(a) => todo!(),
+            Value::Float(a) => {
+                // TODO: Support hashable NaN and Infinity
+                // TODO: Do we want NaN and Infinity to be possible values in the language?
+                if a.is_nan() {
+                    f64::NAN.to_bits().hash(state);
+                } else if a.is_infinite() {
+                    f64::INFINITY.to_bits().hash(state);
+                } else {
+                    a.to_bits().hash(state);
+                }
+            },
             Value::Int(a) => a.hash(state),
             Value::Bool(a) => a.hash(state),
             Value::String(a) => a.hash(state),

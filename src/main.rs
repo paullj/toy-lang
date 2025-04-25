@@ -4,14 +4,14 @@ mod syntax;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use machine::Machine;
+use machine::{compiler::Compiler, Machine};
 use syntax::{
     lex::{Lexer, Token},
     parse::Parser,
 };
 
 use std::{
-    path::{self, PathBuf},
+    path::PathBuf,
     process::ExitCode,
 };
 
@@ -36,6 +36,7 @@ struct Arguments {
 enum Commands {
     Lex { source: String },
     Parse { source: String },
+    Compile {source: String}
 }
 
 use miette::{Diagnostic, Report};
@@ -59,15 +60,36 @@ fn main() -> miette::Result<ExitCode> {
     if let Some(cmd) = &args.cmd {
         match cmd {
             Commands::Lex { source } => {
-                match lex(source) {
+                let contents = if PathBuf::from(source).exists() {
+                    &std::fs::read_to_string(source).unwrap()
+                } else {
+                    &source
+                };
+                match lex(contents) {
                     Ok(_) => return Ok(ExitCode::SUCCESS),
                     Err(e) => return Err(e),
                 }
             }
             Commands::Parse { source } => {
-                match parse(source) {
+                let contents = if PathBuf::from(source).exists() {
+                    &std::fs::read_to_string(source).unwrap()
+                } else {
+                    &source
+                };
+                match parse(contents) {
                     Ok(_) => return Ok(ExitCode::SUCCESS),
                     Err(e) => return Err(e),
+                }
+            }
+            Commands::Compile { source } => {
+                let contents = if PathBuf::from(source).exists() {
+                    &std::fs::read_to_string(source).unwrap()
+                } else {
+                    &source
+                };
+                match compile(contents) {
+                    Ok(_) => return Ok(ExitCode::SUCCESS),
+                    Err(e) => return Err(e)
                 }
             }
         }
@@ -152,14 +174,26 @@ fn parse(source: &str) -> miette::Result<()> {
     Ok(())
 }
 
+fn compile(source: &str) -> miette::Result<()> {
+    let compiler = Compiler::new(source);
+    match compiler.compile() {
+        Ok(mut chunk) => {
+            println!("{}", chunk.disassemble());
+            Ok(())
+        },
+        Err(e) => {
+            eprintln!("{}", e);
+            Ok(())
+        },
+    }
+}
+
 fn run_file(path: &PathBuf) -> miette::Result<()> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| miette::miette!("Failed to read file {}: {}", path.display(), e))?;
 
-    lex(source.as_str()).map_err(|e| miette::miette!("Failed to lex source: {}", e))?;
-
-    parse(source.as_str()).map_err(|e| miette::miette!("Failed to parse source: {}", e))?;
-
+    lex(source.as_str())?;
+    parse(source.as_str())?;
     run(&source)
 }
 
