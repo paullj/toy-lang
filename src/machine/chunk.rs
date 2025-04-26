@@ -28,6 +28,7 @@ pub enum Op {
     SetGlobal,
     GetLocal,
     SetLocal,
+    JumpIfFalse,
 }
 
 impl From<Op> for u8 {
@@ -62,6 +63,7 @@ impl From<u8> for Op {
             20 => Op::SetGlobal,
             21 => Op::GetLocal,
             22 => Op::SetLocal,
+            23 => Op::JumpIfFalse,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
@@ -93,6 +95,7 @@ impl Op {
             Op::SetGlobal => 2,
             Op::GetLocal => 2,
             Op::SetLocal => 2,
+            Op::JumpIfFalse => 3,
         }
     }
 }
@@ -123,6 +126,7 @@ impl Display for Op {
             Op::GetLocal => write!(f, "GET_LOCAL"),
             Op::SetLocal => write!(f, "SET_LOCAL"),
             Op::PopN => write!(f, "POP_N"),
+            Op::JumpIfFalse => write!(f, "JUMP_IF_FALSE"),
         }
     }
 }
@@ -137,10 +141,9 @@ pub struct Chunk {
 }
 
 impl Display for Chunk {
-    // TODO: Move this into a disassemble function
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset = 0;
-        writeln!(f, "OFFS    SPAN OP                N VALUE")?;
+        writeln!(f, "OFFS    SPAN OPERATION         C VALUE")?;
         writeln!(f, "----------------------------------------")?;
         while offset < self.ops.len() {
             write!(f, "{:04}", offset)?;
@@ -173,7 +176,10 @@ impl Display for Chunk {
                 Op::PopN => {
                     let n = self.ops[offset + 1] as usize;
                     write!(f, "    {}", n)?;
-
+                }
+                Op::JumpIfFalse => {
+                    let jump_offset = self.read_u16(offset + 1);
+                    write!(f, "    {}", jump_offset.map_or("?".to_string(), |o| o.to_string()))?;
                 }
                 _ => {}
             }
@@ -195,8 +201,23 @@ impl Chunk {
         }
     }
 
-    pub fn read_u8(&self, ip: usize) -> Option<u8> {
-        self.ops.get(ip).map(|op| *op)
+    pub fn count(&self) -> usize {
+        self.ops.len()
+    }
+
+    /// Reads a u8 from the [`Chunk`] at a specific index
+    pub fn read_u8(&self, pointer: usize) -> Option<u8> {
+        self.ops.get(pointer).map(|op| *op)
+    }
+
+    /// Reads a u16 from two u8s in the [`Chunk`] at a specific index
+    pub fn read_u16(&self, pointer: usize) -> Option<u16> {
+        if let Some(first) = self.read_u8(pointer) {
+            if let Some(second) = self.read_u8(pointer + 1) {
+                return Some((first as u16) << 8 | second as u16);
+            }
+        }
+        None
     }
 
     /// Writes an operation to the [`Chunk`]
@@ -204,6 +225,13 @@ impl Chunk {
         self.ops.push(byte);
         self.spans.push(span.clone());
     }
+
+    /// Writes an operation to the [`Chunk`] at a specific index
+    pub fn update_u8(&mut self, index: usize, byte: u8) {
+        self.ops[index] = byte;
+    }
+
+    /// Reads a constant from the [`Chunk`]
     pub fn read_constant(&self, index: usize) -> &Value {
         &self.constants[index]
     }
@@ -227,10 +255,12 @@ impl Chunk {
         u8::try_from(index).ok()
     }
 
+    /// Disassembles the [`Chunk`] into a string
     pub fn disassemble(&mut self) -> String {
         self.to_string()
     }
 
+    /// Frees the [`Chunk`]
     pub fn free(&mut self) {
         self.ops.clear();
         self.constants.clear();

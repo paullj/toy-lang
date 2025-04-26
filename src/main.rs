@@ -192,8 +192,9 @@ fn run_file(path: &PathBuf) -> miette::Result<()> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| miette::miette!("Failed to read file {}: {}", path.display(), e))?;
 
-    lex(source.as_str())?;
-    parse(source.as_str())?;
+    // lex(source.as_str())?;
+    // parse(source.as_str())?;
+    compile(&source)?;
     run(&source)
 }
 

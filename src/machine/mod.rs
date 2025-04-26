@@ -14,16 +14,17 @@ use crate::error::RuntimeError;
 /// A virtual machine that can execute a compiled chunk of code
 pub struct Machine {
     /// The current instruction pointer
-    ip: usize,
+    pointer: usize,
     /// The stack of values
     stack: Vec<Value>,
+    /// Map of global variables
     globals: HashMap<String, Value>,
 }
 
 impl Machine {
     pub fn new() -> Self {
         Self {
-            ip: 0,
+            pointer: 0,
             stack: Vec::new(),
             globals: HashMap::new(),
         }
@@ -41,14 +42,20 @@ impl Machine {
     }
 
     fn read_u8(&mut self, chunk: &Chunk) -> Option<u8> {
-        let code = chunk.read_u8(self.ip);
-        self.ip += 1;
+        let code = chunk.read_u8(self.pointer);
+        self.pointer += 1;
+        code
+    }
+
+    fn read_u16(&mut self, chunk: &Chunk) -> Option<u16> {
+        let code = chunk.read_u16(self.pointer);
+        self.pointer += 2;
         code
     }
 
     fn read_constant<'a>(&mut self, chunk: &'a Chunk) -> &'a Value {
-        if let Some(i) = chunk.read_u8(self.ip) {
-            self.ip += 1;
+        if let Some(i) = chunk.read_u8(self.pointer) {
+            self.pointer += 1;
             chunk.read_constant(i as usize)
         } else {
             todo!("Handle invalid constant index");
@@ -59,7 +66,8 @@ impl Machine {
         // TODO: Add stack tracing https://craftinginterpreters.com/a-virtual-machine.html#stack-tracing
         loop {
             if let Some(code) = self.read_u8(chunk) {
-                match Op::from(code) {
+                let code = Op::from(code);
+                match code {
                     Op::Return => return Ok(()),
                     Op::Constant => {
                         let constant = self.read_constant(chunk);
@@ -137,7 +145,16 @@ impl Machine {
                             }
                         }
                     }
-                }
+                    Op::JumpIfFalse => {
+                        if let Some(value) = self.peek(0) {
+                            if value == Value::Bool(false) {
+                                if let Some(offset) = self.read_u16(chunk) {
+                                    self.pointer += offset as usize;
+                                }
+                            }
+                        }
+                    }
+                }   
             }
         }
     }

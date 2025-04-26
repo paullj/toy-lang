@@ -50,7 +50,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
         match self.parse_group(0) {
-            Ok(tree) => Ok(Tree::Cons(Operator::Root, tree, 0..0)),
+            Ok(tree) => Ok(Tree::Construct(Operator::Root, tree, 0..0)),
             Err(e) => Err(e)
         }
     }
@@ -144,7 +144,7 @@ impl<'a> Parser<'a> {
                     .parse_expression_within(0)
                     .wrap_err("in variable declaration expression")?;
 
-                Ok(Tree::Cons(Operator::Let, vec![identifier, value], span))
+                Ok(Tree::Construct(Operator::Let, vec![identifier, value], span))
             }
             _ => self.parse_statement(min_bp),
         }
@@ -161,15 +161,27 @@ impl<'a> Parser<'a> {
                 self.expect(Token::Echo, "expected echo")?;
                 let (_, r_bp) = Operator::Echo.prefix_binding_power();
                 match self.parse_expression_within(r_bp) {
-                    Ok(rhs) => Ok(Tree::Cons(Operator::Echo, vec![rhs], span)),
+                    Ok(rhs) => Ok(Tree::Construct(Operator::Echo, vec![rhs], span)),
                     Err(_) => todo!(),
                 }
+            }
+            Token::If => {
+                self.expect(Token::If, "expected if")?;
+                let condition = match self.parse_expression_within(min_bp)  {
+                    Ok(tree) => tree,
+                    Err(_) => todo!("error handle expression parsing in if condition"),
+                };
+                self.expect(Token::LeftBrace, "expected '{'")?;
+                let group = self.parse_group(min_bp)?;
+                self.expect(Token::RightBrace, "expected '}'")?;
+
+                Ok(Tree::Construct(Operator::If, vec![condition, Tree::Construct(Operator::Group, group, span.clone())], span))
             }
             Token::LeftBrace => {
                 self.expect(Token::LeftBrace, "expected '{'")?;
                 let group = self.parse_group(min_bp)?;
                 self.expect(Token::RightBrace, "expected '}'")?;
-                Ok(Tree::Cons(Operator::Group, group, span))
+                Ok(Tree::Construct(Operator::Group, group, span))
             }
             _ => self.parse_expression_within(0),
         }
@@ -217,7 +229,7 @@ impl<'a> Parser<'a> {
                 )
                 .wrap_err("after bracketed expression")?;
         
-                Tree::Cons(Operator::Group, vec![lhs], span)
+                Tree::Construct(Operator::Group, vec![lhs], span)
             }
             Token::Return | Token::Bang | Token::Minus => {
                 let op = match token {
@@ -228,7 +240,7 @@ impl<'a> Parser<'a> {
                 };
                 let (_, r_bp) = op.prefix_binding_power();
                 match self.parse_expression_within(r_bp) {
-                    Ok(rhs) => Tree::Cons(op, vec![rhs], span),
+                    Ok(rhs) => Tree::Construct(op, vec![rhs], span),
                     Err(_) => todo!(),
                 }
             }
@@ -248,6 +260,7 @@ impl<'a> Parser<'a> {
                     Ok((Token::EOL, _)) => break,
                     Ok((token, span)) => {
                         let op = match token {
+                            Token::LeftBrace => break,
                             Token::RightParenthesis | Token::Comma | Token::RightBrace => break,
                             Token::Plus => Operator::Plus,
                             Token::Minus => Operator::Minus,
@@ -267,7 +280,7 @@ impl<'a> Parser<'a> {
                                 break;
                             }
                             self.lexer.next();
-                            lhs = Tree::Cons(op, vec![lhs], span);
+                            lhs = Tree::Construct(op, vec![lhs], span);
                             continue;
                         }
 
@@ -278,7 +291,7 @@ impl<'a> Parser<'a> {
                             self.lexer.next();
                             match self.parse_expression_within(r_bp) {
                                 Ok(rhs) => {
-                                    lhs = Tree::Cons(op, vec![lhs, rhs], span);
+                                    lhs = Tree::Construct(op, vec![lhs, rhs], span);
                                 }
                                 Err(err) => return Err(err).wrap_err(""),
                             }

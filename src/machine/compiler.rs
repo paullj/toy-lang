@@ -39,15 +39,14 @@ impl<'a> Compiler<'a> {
         let ast = self.parser.parse().map_err(|e| e.to_string())?;
 
         self.compile_tree(&ast)?;
-        self.chunk.write_u8(Op::Return.into(), &(0..0).into());
+        self.emit_op(Op::Return, &(0..0).into());
         Ok(self.chunk)
     }
 
     fn compile_tree(&mut self, tree: &Tree<'a>) -> Result<(), String> {
         match tree {
             Tree::Atom(atom, span) => self.compile_atom(atom, span),
-            Tree::Cons(op, args, span) => self.compile_cons(op, args, span),
-            _ => todo!("Implement other tree types"),
+            Tree::Construct(op, args, span) => self.compile_cons(op, args, span),
         }
     }
 
@@ -55,32 +54,28 @@ impl<'a> Compiler<'a> {
         match atom {
             Atom::Float(n) => {
                 if let Some(constant) = self.chunk.write_constant(Value::Float(*n)) {
-                    self.chunk.write_u8(Op::Constant.into(), span);
-                    self.chunk.write_u8(constant, span);
+                    self.emit_op_with_arg(Op::Constant, constant, span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
             }
             Atom::Int(n) => {
                 if let Some(constant) = self.chunk.write_constant(Value::Int(*n)) {
-                    self.chunk.write_u8(Op::Constant.into(), span);
-                    self.chunk.write_u8(constant, span);
+                    self.emit_op_with_arg(Op::Constant, constant, span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
             }
             Atom::Bool(b) => {
                 if let Some(constant) = self.chunk.write_constant(Value::Bool(*b)) {
-                    self.chunk.write_u8(Op::Constant.into(), span);
-                    self.chunk.write_u8(constant, span);
+                    self.emit_op_with_arg(Op::Constant, constant, span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
             }
             Atom::String(s) => {
                 if let Some(constant) = self.chunk.write_constant(Value::String(s.to_string())) {
-                    self.chunk.write_u8(Op::Constant.into(), span);
-                    self.chunk.write_u8(constant, span);
+                    self.emit_op_with_arg(Op::Constant, constant, span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
@@ -90,8 +85,7 @@ impl<'a> Compiler<'a> {
                     Ok(result) => result,
                     Err(_) => todo!("Error"),
                 };
-                self.chunk.write_u8(get_op.into(), span);
-                self.chunk.write_u8(arg, span);
+                self.emit_op_with_arg(get_op, arg, span);
             }
         }
         Ok(())
@@ -103,43 +97,33 @@ impl<'a> Compiler<'a> {
         args: &[Tree<'a>],
         span: &Span,
     ) -> Result<(), String> {
-        // TODO: Make this better. Surely can't be the best way to do this.
         match (op, args) {
+            (Operator::Root, args) => {
+                for value in args {
+                    self.compile_tree(&value)?;
+                }
+            }
             (Operator::Minus, [value]) => {
-                // Compile the inner expression
                 self.compile_tree(&value)?;
-                // Write the operation
-                self.chunk.write_u8(Op::Negate.into(), span);
+                self.emit_op(Op::Negate, span);
             }
             (Operator::Bang, [value]) => {
-                // Compile the inner expression
                 self.compile_tree(&value)?;
-                // Write the operation
-                self.chunk.write_u8(Op::Not.into(), span);
+                self.emit_op(Op::Not, span);
             }
             (
                 Operator::Plus | Operator::Minus | Operator::Asterisk | Operator::Slash,
                 [left, right],
             ) => {
-                // Compile left operand
                 self.compile_tree(&left)?;
-
-                // Compile right operand
                 self.compile_tree(&right)?;
-
-                // Write the operation
                 match op {
-                    Operator::Plus => self.chunk.write_u8(Op::Add.into(), span),
-                    Operator::Minus => self.chunk.write_u8(Op::Subtract.into(), span),
-                    Operator::Asterisk => self.chunk.write_u8(Op::Multiply.into(), span),
-                    Operator::Slash => self.chunk.write_u8(Op::Divide.into(), span),
+                    Operator::Plus => self.emit_op(Op::Add, span),
+                    Operator::Minus => self.emit_op(Op::Subtract, span),
+                    Operator::Asterisk => self.emit_op(Op::Multiply, span),
+                    Operator::Slash => self.emit_op(Op::Divide, span),
                     _ => unreachable!(),
-                }
-            }
-            (Operator::Root, args) => {
-                for value in args {
-                    self.compile_tree(&value)?;
-                }
+                };
             }
             (Operator::Group, args) => {
                 self.begin_scope();
@@ -149,58 +133,38 @@ impl<'a> Compiler<'a> {
                 self.end_scope();
             }
             (Operator::EqualEqual, [left, right]) => {
-                // Compile left operand
                 self.compile_tree(&left)?;
-                // Compile right operand
                 self.compile_tree(&right)?;
-                // Write the operation
-                self.chunk.write_u8(Op::Equal.into(), span);
+                self.emit_op(Op::Equal, span);
             }
             (Operator::Less, [left, right]) => {
-                // Compile left operand
                 self.compile_tree(&left)?;
-                // Compile right operand
                 self.compile_tree(&right)?;
-                // Write the operation
-                self.chunk.write_u8(Op::Less.into(), span);
+                self.emit_op(Op::Less, span);
             }
             (Operator::Greater, [left, right]) => {
-                // Compile left operand
                 self.compile_tree(&left)?;
-                // Compile right operand
                 self.compile_tree(&right)?;
-                // Write the operation
-                self.chunk.write_u8(Op::Greater.into(), span);
+                self.emit_op(Op::Greater, span);
             }
             (Operator::LessEqual, [left, right]) => {
-                // Compile left operand
                 self.compile_tree(&left)?;
-                // Compile right operand
                 self.compile_tree(&right)?;
-                // Write the operationj
-                self.chunk.write_u8(Op::LessEqual.into(), span);
+                self.emit_op(Op::LessEqual, span);
             }
             (Operator::GreaterEqual, [left, right]) => {
-                // Compile left operand
                 self.compile_tree(&left)?;
-                // Compile right operand
                 self.compile_tree(&right)?;
-                // Write the operation
-                self.chunk.write_u8(Op::GreaterEqual.into(), span);
+                self.emit_op(Op::GreaterEqual, span);
             }
             (Operator::Echo, [value]) => {
-                // Compile the inner expression
                 self.compile_tree(&value)?;
-                // Write the operation
-                self.chunk.write_u8(Op::Echo.into(), span);
+                self.emit_op(Op::Echo, span);
             }
             (Operator::Return, _) => {
-                // Write the operation
-                self.chunk.write_u8(Op::Return.into(), span);
+                self.emit_op(Op::Return, span);
             }
             (Operator::Let, [Tree::Atom(Atom::Identifier(name), _), value]) => {
-                // // self.parse_variable("Expect variable name.");
-                // // self.declare_variable();
                 if self.scope_depth != 0 {
                     if self.locals.iter().filter(|x| x.name == *name).count() != 0 {
                         return Err("Variable already declared with the same name".to_string());
@@ -217,15 +181,12 @@ impl<'a> Compiler<'a> {
 
                 if let Some(constant) = self.chunk.write_constant(Value::String(name.to_string())) {
                     self.compile_tree(&value)?;
-
                     if self.scope_depth == 0 {
-                        self.chunk.write_u8(Op::DefineGlobal.into(), span);
-                        self.chunk.write_u8(constant, span);
+                        self.emit_op_with_arg(Op::DefineGlobal, constant, span);
                     }
                 } else {
                     return Err("Too many constants".to_string());
                 }
-                // }
             }
             (Operator::Equal, [Tree::Atom(Atom::Identifier(name), _), value]) => {
                 let (arg, _, set_op) = match self.get_variable(name) {
@@ -233,12 +194,45 @@ impl<'a> Compiler<'a> {
                     Err(_) => todo!("Error"),
                 };
                 self.compile_tree(&value)?;
-                self.chunk.write_u8(set_op.into(), span);
-                self.chunk.write_u8(arg, span);
+                self.emit_op_with_arg(set_op, arg, span);
+            }
+            (Operator::If, [condition, yes]) => {
+                self.compile_tree(&condition)?;
+                let offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                self.compile_tree(&yes)?;
+
+                // TODO: Put this in a function
+                let jump = self.chunk.count() - offset - 2;
+                if jump > u16::MAX as usize {
+                    return Err("Too much code to jump over.".to_string());
+                }
+                self.chunk.update_u8(offset, ((jump >> 8) & 0xff) as u8);
+                self.chunk.update_u8(offset + 1, (jump & 0xff) as u8);
             }
             (op, _) => todo!("Implement operator in compiler.rs {op:?}"),
         }
         Ok(())
+    }
+
+    /// Emits an operation to the chunk and returns the index of the operation
+    fn emit_op(&mut self, op: Op, span: &Span) -> usize {
+        self.chunk.write_u8(op.into(), span);
+        self.chunk.count()
+    }
+
+    /// Emits an operation with a single argument to the chunk and returns the index of the operation
+    fn emit_op_with_arg(&mut self, op: Op, arg: u8, span: &Span) -> usize {
+        self.emit_op(op, span);
+        self.chunk.write_u8(arg, span);
+        self.chunk.count() - 1
+    }
+
+    /// Emits an operation with two arguments to the chunk and returns the index of the operation
+    fn emit_op_with_args(&mut self, op: Op, args: [u8; 2], span: &Span) -> usize {
+        self.emit_op(op, span);
+        self.chunk.write_u8(args[0], span);
+        self.chunk.write_u8(args[1], span);
+        self.chunk.count() - 2
     }
 
     fn get_variable(&mut self, name: &Cow<str>) -> Result<(u8, Op, Op), ()> {
@@ -276,8 +270,7 @@ impl<'a> Compiler<'a> {
         }
         let pops = self.locals.len() - keep;
         if pops > 0 {
-            self.chunk.write_u8(Op::PopN.into(), &(0..0).into());
-            self.chunk.write_u8(pops as u8, &(0..0).into());
+            self.emit_op_with_arg(Op::PopN, pops as u8, &(0..0).into());
             self.locals.truncate(keep);
         }
     }

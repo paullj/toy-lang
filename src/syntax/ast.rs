@@ -37,6 +37,7 @@ pub enum Operator {
     While,
     Group,
     Root,
+    If,
 }
 
 impl Operator {
@@ -79,21 +80,20 @@ impl Operator {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tree<'a> {
     Atom(Atom<'a>, Span),
-    Cons(Operator, Vec<Tree<'a>>, Span),
-    Fn {
-        name: Atom<'a>,
-        parameters: Vec<Token>,
-        body: Box<Tree<'a>>,
-    },
-    Call {
-        callee: Box<Tree<'a>>,
-        arguments: Vec<Tree<'a>>,
-    },
-    If {
-        condition: Box<Tree<'a>>,
-        yes: Box<Tree<'a>>,
-        no: Option<Box<Tree<'a>>>,
-    },
+    Construct(Operator, Vec<Tree<'a>>, Span),
+    // Fn {
+    //     name: Atom<'a>,
+    //     parameters: Vec<Token>,
+    //     body: Box<Tree<'a>>,
+    // },
+    // Call {
+    //     callee: Box<Tree<'a>>,
+    //     arguments: Vec<Tree<'a>>,
+    // },
+    // If {
+    //     condition: Box<Tree<'a>>,
+    //     yes: Vec<Tree<'a>>,
+    // },
 }
 
 impl fmt::Display for Tree<'_> {
@@ -107,7 +107,7 @@ impl fmt::Display for Tree<'_> {
                 Atom::Bool(b) => write!(f, "{}", b),
                 Atom::Identifier(id) => write!(f, "{}", id),
             },
-            Tree::Cons(operator, tree, _) => {
+            Tree::Construct(operator, tree, _) => {
                 write!(f, "(")?;
                 match operator {
                     Operator::Plus => write!(f, "+"),
@@ -134,6 +134,7 @@ impl fmt::Display for Tree<'_> {
                     Operator::Fn => todo!(),
                     Operator::Field => todo!(),
                     Operator::While => todo!(),
+                    Operator::If => write!(f, "if"),
                 }?;
                 write!(
                     f,
