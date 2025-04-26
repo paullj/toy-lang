@@ -154,6 +154,11 @@ impl Machine {
                             }
                         }
                     }
+                    Op::Jump => {
+                        if let Some(offset) = self.read_u16(chunk) {
+                            self.pointer += offset as usize;
+                        }
+                    }
                 }   
             }
         }

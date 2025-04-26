@@ -29,6 +29,7 @@ pub enum Op {
     GetLocal,
     SetLocal,
     JumpIfFalse,
+    Jump,
 }
 
 impl From<Op> for u8 {
@@ -64,6 +65,7 @@ impl From<u8> for Op {
             21 => Op::GetLocal,
             22 => Op::SetLocal,
             23 => Op::JumpIfFalse,
+            24 => Op::Jump,
             _ => panic!("Unknown opcode: {}", op),
         }
     }
@@ -96,6 +98,7 @@ impl Op {
             Op::GetLocal => 2,
             Op::SetLocal => 2,
             Op::JumpIfFalse => 3,
+            Op::Jump => 3,
         }
     }
 }
@@ -127,6 +130,7 @@ impl Display for Op {
             Op::SetLocal => write!(f, "SET_LOCAL"),
             Op::PopN => write!(f, "POP_N"),
             Op::JumpIfFalse => write!(f, "JUMP_IF_FALSE"),
+            Op::Jump => write!(f, "JUMP"),
         }
     }
 }
@@ -177,7 +181,7 @@ impl Display for Chunk {
                     let n = self.ops[offset + 1] as usize;
                     write!(f, "    {}", n)?;
                 }
-                Op::JumpIfFalse => {
+                Op::JumpIfFalse | Op::Jump => {
                     let jump_offset = self.read_u16(offset + 1);
                     write!(f, "    {}", jump_offset.map_or("?".to_string(), |o| o.to_string()))?;
                 }

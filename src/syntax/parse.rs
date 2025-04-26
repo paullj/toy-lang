@@ -175,7 +175,20 @@ impl<'a> Parser<'a> {
                 let group = self.parse_group(min_bp)?;
                 self.expect(Token::RightBrace, "expected '}'")?;
 
-                Ok(Tree::Construct(Operator::If, vec![condition, Tree::Construct(Operator::Group, group, span.clone())], span))
+                let mut args = vec![condition, Tree::Construct(Operator::Group, group, span.clone())];
+
+                let else_branch = match self.lexer.peek() {
+                    Some(Ok((Token::Else, _))) => {
+                        self.lexer.next();
+                        Some(self.parse_group(min_bp)?)
+                    }
+                    _ => None,
+                };
+                if let Some(else_branch) = else_branch {
+                    args.push(Tree::Construct(Operator::Group, else_branch, span.clone()));
+                }
+
+                Ok(Tree::Construct(Operator::If, args, span))
             }
             Token::LeftBrace => {
                 self.expect(Token::LeftBrace, "expected '{'")?;

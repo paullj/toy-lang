@@ -44,6 +44,10 @@ impl Add for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 + b)),
             (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
+            (Value::String(a), Value::Int(b)) => Ok(Value::String(a + &b.to_string())),
+            (Value::Int(a), Value::String(b)) => Ok(Value::String(a.to_string() + &b)),
+            (Value::String(a), Value::Float(b)) => Ok(Value::String(a + &b.to_string())),
+            (Value::Float(a), Value::String(b)) => Ok(Value::String(a.to_string() + &b)),
             _ => Err(RuntimeError::InvalidOperation {
                 operation: "+".to_string()
             }),

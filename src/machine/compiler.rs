@@ -196,19 +196,33 @@ impl<'a> Compiler<'a> {
                 self.compile_tree(&value)?;
                 self.emit_op_with_arg(set_op, arg, span);
             }
-            (Operator::If, [condition, yes]) => {
-                self.compile_tree(&condition)?;
-                let offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
-                self.compile_tree(&yes)?;
+            (Operator::If, args) => {
+                match args {
+                    [condition, yes] => {
+                        self.compile_tree(&condition)?;
+                        let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                        self.emit_op(Op::Pop, span);
+                        self.compile_tree(&yes)?;
 
-                // TODO: Put this in a function
-                let jump = self.chunk.count() - offset - 2;
-                if jump > u16::MAX as usize {
-                    return Err("Too much code to jump over.".to_string());
+                        self.patch_jump(then_offset, self.chunk.count() - then_offset - 2);
+                    }
+                    [condition, yes, no] => {
+                        self.compile_tree(&condition)?;
+                        let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                        self.emit_op(Op::Pop, span);
+                        self.compile_tree(&yes)?;
+                        
+                        let else_offset = self.emit_op_with_args(Op::Jump, [0xff, 0xff], span);
+                        self.patch_jump(then_offset, self.chunk.count() - then_offset - 2);
+                        self.emit_op(Op::Pop, span);
+
+                        self.compile_tree(&no)?;
+                        self.patch_jump(else_offset, self.chunk.count() - else_offset - 2);
+                    }
+                    _ => todo!("Invalid number of arguments for if"),
                 }
-                self.chunk.update_u8(offset, ((jump >> 8) & 0xff) as u8);
-                self.chunk.update_u8(offset + 1, (jump & 0xff) as u8);
             }
+
             (op, _) => todo!("Implement operator in compiler.rs {op:?}"),
         }
         Ok(())
@@ -233,6 +247,14 @@ impl<'a> Compiler<'a> {
         self.chunk.write_u8(args[0], span);
         self.chunk.write_u8(args[1], span);
         self.chunk.count() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize, jump: usize) {
+        if jump > u16::MAX as usize {
+            panic!("Too much code to jump over.");
+        }
+        self.chunk.update_u8(offset, ((jump >> 8) & 0xff) as u8);
+        self.chunk.update_u8(offset + 1, (jump & 0xff) as u8);
     }
 
     fn get_variable(&mut self, name: &Cow<str>) -> Result<(u8, Op, Op), ()> {
