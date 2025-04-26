@@ -1,0 +1,8 @@
+let person = "Bob"
+let greeting = "Hello, "
+
+let message = greeting + person
+
+message = message + "!"
+
+echo message
