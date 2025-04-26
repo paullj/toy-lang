@@ -1,0 +1,5 @@
+echo (false or true)
+echo (true or false)
+
+echo (false and true)
+echo (true and true)

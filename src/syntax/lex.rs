@@ -202,6 +202,10 @@ pub(crate) enum Token {
     False,
     #[token("echo")]
     Echo,
+    #[token("and")]
+    And,
+    #[token("or")]
+    Or,
 
     /// End of line
     #[regex(r"[\r\n]+")]
@@ -244,6 +248,8 @@ impl Display for Token {
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),
             Token::Echo => write!(f, "echo"),
+            Token::And => write!(f, "and"),
+            Token::Or => write!(f, "or"),
             Token::EOL => write!(f, "EOL"),
         }
     }

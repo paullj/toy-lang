@@ -60,7 +60,6 @@ impl Operator {
     pub fn infix_binding_power(&self) -> Option<(u8, u8)> {
         let result = match &self {
             Self::Equal => (2, 1),
-            // '?' => (4, 3),
             Self::And | Self::Or => (3, 4),
             Self::BangEqual
             | Self::EqualEqual
@@ -129,11 +128,11 @@ impl fmt::Display for Tree<'_> {
                     Operator::Let => write!(f, "let"),
                     Operator::Equal => write!(f, "="),
                     Operator::Root => write!(f, "root"),
-                    Operator::Call => todo!(),
-                    Operator::For => todo!(),
-                    Operator::Fn => todo!(),
-                    Operator::Field => todo!(),
-                    Operator::While => todo!(),
+                    Operator::Call => write!(f, "call"),
+                    Operator::For => write!(f, "for"),
+                    Operator::Fn => write!(f, "fn"),
+                    Operator::Field => write!(f, "field"),
+                    Operator::While => write!(f, "while"),
                     Operator::If => write!(f, "if"),
                 }?;
                 write!(
@@ -147,7 +146,6 @@ impl fmt::Display for Tree<'_> {
                 write!(f, ")")?;
                 Ok(())
             }
-            _ => todo!(),
         }
     }
 }

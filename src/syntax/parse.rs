@@ -285,6 +285,8 @@ impl<'a> Parser<'a> {
                             Token::GreaterEqual => Operator::GreaterEqual,
                             Token::EqualEqual => Operator::EqualEqual,
                             Token::Equal => Operator::Equal,
+                            Token::And => Operator::And,
+                            Token::Or => Operator::Or,
                             _ => panic!("bad op: {:?}", token),
                         };
                         let span = span.clone();

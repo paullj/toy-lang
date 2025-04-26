@@ -196,33 +196,44 @@ impl<'a> Compiler<'a> {
                 self.compile_tree(&value)?;
                 self.emit_op_with_arg(set_op, arg, span);
             }
-            (Operator::If, args) => {
-                match args {
-                    [condition, yes] => {
-                        self.compile_tree(&condition)?;
-                        let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
-                        self.emit_op(Op::Pop, span);
-                        self.compile_tree(&yes)?;
-
-                        self.patch_jump(then_offset, self.chunk.count() - then_offset - 2);
-                    }
-                    [condition, yes, no] => {
-                        self.compile_tree(&condition)?;
-                        let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
-                        self.emit_op(Op::Pop, span);
-                        self.compile_tree(&yes)?;
-                        
-                        let else_offset = self.emit_op_with_args(Op::Jump, [0xff, 0xff], span);
-                        self.patch_jump(then_offset, self.chunk.count() - then_offset - 2);
-                        self.emit_op(Op::Pop, span);
-
-                        self.compile_tree(&no)?;
-                        self.patch_jump(else_offset, self.chunk.count() - else_offset - 2);
-                    }
-                    _ => todo!("Invalid number of arguments for if"),
-                }
+            (Operator::And, [left, right]) => {
+                self.compile_tree(&left)?;
+                let offset_jump = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                self.emit_op(Op::Pop, span);
+                self.compile_tree(right)?;
+                self.patch_jump(offset_jump);
             }
+            (Operator::Or, [left, right]) => {
+                self.compile_tree(&left)?;
+                let else_jump = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                let end_jump = self.emit_op_with_args(Op::Jump, [0xff, 0xff], span);
 
+                self.patch_jump(else_jump);
+                self.emit_op(Op::Pop, span);
+
+                self.compile_tree(&right)?;
+                self.patch_jump(end_jump);
+            }
+            (Operator::If, [condition, then_branch]) => {
+                self.compile_tree(&condition)?;
+                let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                self.emit_op(Op::Pop, span);
+                self.compile_tree(&then_branch)?;
+                self.patch_jump(then_offset);
+            }
+            (Operator::If, [condition, then_branch, else_branch]) => {
+                self.compile_tree(&condition)?;
+                let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                self.emit_op(Op::Pop, span);
+                self.compile_tree(&then_branch)?;
+
+                let else_offset = self.emit_op_with_args(Op::Jump, [0xff, 0xff], span);
+                self.patch_jump(then_offset);
+                self.emit_op(Op::Pop, span);
+
+                self.compile_tree(&else_branch)?;
+                self.patch_jump(else_offset);
+            }
             (op, _) => todo!("Implement operator in compiler.rs {op:?}"),
         }
         Ok(())
@@ -249,12 +260,13 @@ impl<'a> Compiler<'a> {
         self.chunk.count() - 2
     }
 
-    fn patch_jump(&mut self, offset: usize, jump: usize) {
-        if jump > u16::MAX as usize {
+    fn patch_jump(&mut self, offset: usize) {
+        let relative = self.chunk.count() - offset - 2;
+        if relative > u16::MAX as usize {
             panic!("Too much code to jump over.");
         }
-        self.chunk.update_u8(offset, ((jump >> 8) & 0xff) as u8);
-        self.chunk.update_u8(offset + 1, (jump & 0xff) as u8);
+        self.chunk.update_u8(offset, ((relative >> 8) & 0xff) as u8);
+        self.chunk.update_u8(offset + 1, (relative & 0xff) as u8);
     }
 
     fn get_variable(&mut self, name: &Cow<str>) -> Result<(u8, Op, Op), ()> {
