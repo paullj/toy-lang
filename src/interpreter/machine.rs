@@ -1,22 +1,18 @@
-mod chunk;
-pub mod compiler;
-mod rle;
-mod value;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::{Duration, Instant}};
 
-use std::{collections::HashMap, time::{Duration, Instant}};
-
-use chunk::{Chunk, Op};
-use compiler::Compiler;
-use value::Value;
+use super::op::Op;
+use super::chunk::Chunk;
+use super::compiler::Compiler;
+use super::value::Value;
 
 use crate::error::RuntimeError;
 
 /// A virtual machine that can execute a compiled chunk of code
 pub struct Machine {
-    /// The current instruction pointer
-    pointer: usize,
     /// The stack of values
     stack: Vec<Value>,
+    /// Call frames
+    frames: Vec<Frame>,
     /// Map of global variables
     globals: HashMap<String, Value>,
 }
@@ -26,77 +22,128 @@ pub(crate) struct ExecutionResult {
     pub execution: Duration,
 }
 
+
+ struct Frame {
+     function: usize,
+     pointer: RefCell<usize>,
+     slots: usize,
+ }
+ 
+ impl Frame {
+     fn increment(&self, amount: usize) {
+         *self.pointer.borrow_mut() += amount;
+     }
+ 
+     fn decrement(&self, amount: usize) {
+         *self.pointer.borrow_mut() -= amount;
+     }
+ }
+
 impl Machine {
     pub fn new() -> Self {
         Self {
-            pointer: 0,
             stack: Vec::new(),
+            frames: Vec::new(),
             globals: HashMap::new(),
         }
     }
 
     pub(crate) fn interpret(&mut self, source: &str) -> miette::Result<ExecutionResult> {
-        let start = Instant::now();
+        let compilation_start = Instant::now();
         let compiler = Compiler::new(source);
+        
+        
         match compiler.compile() {
-            Ok(chunk) => {
-                let compilation_duration = start.elapsed();
-                let start = Instant::now();
-                self.run(&chunk)?;
-                Ok(ExecutionResult {
-                    compilation: compilation_duration,
-                    execution: start.elapsed(),
-                })
+            Ok(function) => {
+                self.push(Value::Function(function));
+                self.frames.push(Frame {
+                    function: 0,
+                    pointer: RefCell::new(0),
+                    slots: 0,
+                });
             }
             Err(e) => todo!("Handle compile error: {}", e),
-        }
+        };
+        let compilation_duration = compilation_start.elapsed();
+        let execution_start = Instant::now();
+        self.run()?;
+        Ok(ExecutionResult {
+            compilation: compilation_duration,
+            execution: execution_start.elapsed(),
+        })
     }
 
-    fn read_u8(&mut self, chunk: &Chunk) -> Option<u8> {
-        let code = chunk.read_u8(self.pointer);
-        self.pointer += 1;
+    fn pointer(&self) -> usize {
+         *self.current_frame().pointer.borrow()
+     }
+
+     fn increment_pointer(&mut self, amount: usize) {
+        self.current_frame().increment(amount);
+     }
+    
+     fn decrement_pointer(&mut self, amount: usize) {
+        self.current_frame().decrement(amount);
+     }
+ 
+     fn current_frame(&self) -> &Frame {
+         self.frames.last().unwrap()
+     }
+ 
+     fn chunk(&self) -> Rc<Chunk> {
+         let position = self.frames.last().unwrap().function;
+         if let Value::Function(f) = &self.stack[position] {
+             f.get_chunk()
+         } else {
+             panic!("no chunk");
+         }
+     }
+
+    fn read_u8(&mut self) -> Option<u8> {
+        let code = self.chunk().read_u8(self.pointer());
+        self.increment_pointer(1);
         code
     }
     
-    fn read_u16(&mut self, chunk: &Chunk) -> Option<u16> {
-        if let Some(first) = self.read_u8(chunk) {
-            if let Some(second) = self.read_u8(chunk) {
-                return Some((first as u16) << 8 | second as u16);
+    fn read_u16(&mut self) -> Option<u16> {
+        if let Some(first) = self.read_u8() {
+            if let Some(second) = self.read_u8() {
+                return Some(u16::from_be_bytes([first, second]));
             }
         }
         None
     }
 
-    fn read_constant<'a>(&mut self, chunk: &'a Chunk) -> &'a Value {
-        if let Some(i) = chunk.read_u8(self.pointer) {
-            self.pointer += 1;
-            chunk.read_constant(i as usize)
-        } else {
+    fn read_value(&mut self) -> Value {
+        if let Some(i) = self.read_u8() {
+            let chunk = self.chunk();
+            let constant = chunk.read_constant(i as usize);
+            constant.clone()
+        } else {    
             todo!("Handle invalid constant index");
         }
     }
 
-    fn run(&mut self, chunk: &Chunk) -> Result<(), RuntimeError> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
         // TODO: Add stack tracing https://craftinginterpreters.com/a-virtual-machine.html#stack-tracing
         loop {
-            if let Some(code) = self.read_u8(chunk) {
+            if let Some(code) = self.read_u8() {
                 let code = Op::from(code);
                 match code {
                     Op::Return => return Ok(()),
                     Op::Constant => {
-                        let constant = self.read_constant(chunk);
-                        self.stack.push(constant.clone());
+                        let constant = self.read_value();
+                        self.push(constant.clone());
                     }
                     Op::Pop => {
-                        self.stack.pop();
+                        self.pop();
                     }
                     Op::PopN => {
-                        if let Some(n) = self.read_u8(chunk) {
+                        if let Some(n) = self.read_u8() {
                             self.stack.truncate(self.stack.len() - n as usize);
                         }
                     }
-                    Op::True => self.stack.push(Value::Bool(true)),
-                    Op::False => self.stack.push(Value::Bool(false)),
+                    Op::True => self.push(Value::Bool(true)),
+                    Op::False => self.push(Value::Bool(false)),
                     Op::Negate => self.unary_op(|a| -a)?,
                     Op::Add => self.binary_op(|a, b| a + b)?,
                     Op::Subtract => self.binary_op(|a, b| a - b)?,
@@ -109,16 +156,16 @@ impl Machine {
                     Op::LessEqual => self.binary_op(|a, b| Ok(Value::Bool(a <= b)))?,
                     Op::GreaterEqual => self.binary_op(|a, b| Ok(Value::Bool(a >= b)))?,
                     Op::Echo => {
-                        if let Some(value) = self.stack.pop() {
+                        if let Some(value) = self.pop() {
                             println!("{}", value);
                         } else {
                             todo!("Handle empty stack on echo");
                         }
                     }
                     Op::DefineGlobal => {
-                        let constant = self.read_constant(chunk);
+                        let constant = self.read_value();
                         if let Value::String(s) = constant {
-                            if let Some(p) = self.stack.pop() {
+                            if let Some(p) = self.pop() {
                                 self.globals.insert(s.to_string(), p.clone());
                             }
                         } else {
@@ -126,10 +173,10 @@ impl Machine {
                         }
                     }
                     Op::GetGlobal => {
-                        let constant = self.read_constant(chunk);
+                        let constant = self.read_value();
                         if let Value::String(s) = constant {
                             if let Some(v) = self.globals.get(&s.to_string()) {
-                                self.stack.push(v.clone())
+                                self.push(v.clone())
                             } else {
                                 todo!("Handle undefined global variable");
                             }
@@ -138,9 +185,9 @@ impl Machine {
                         }
                     }
                     Op::SetGlobal => {
-                        let constant = self.read_constant(chunk);
+                        let constant = self.read_value();
                         if let Value::String(s) = constant {
-                            if let Some(p) = self.stack.pop() {
+                            if let Some(p) = self.pop() {
                                 self.globals.insert(s.to_string(), p.clone());
                             }
                         } else {
@@ -148,12 +195,12 @@ impl Machine {
                         }
                     }
                     Op::GetLocal => {
-                        if let Some(index) = self.read_u8(chunk) {
-                            self.stack.push(self.stack[index as usize].clone());
+                        if let Some(index) = self.read_u8() {
+                            self.push(self.stack[index as usize].clone());
                         }
                     }
                     Op::SetLocal => {
-                        if let Some(index) = self.read_u8(chunk) {
+                        if let Some(index) = self.read_u8() {
                             if let Some(value) = self.peek(0) {
                                 self.stack[index as usize] = value;
                             }
@@ -162,31 +209,39 @@ impl Machine {
                     Op::JumpIfFalse => {
                         if let Some(value) = self.peek(0) {
                             if value == Value::Bool(false) {
-                                if let Some(offset) = self.read_u16(chunk) {
-                                    self.pointer += offset as usize;
+                                if let Some(offset) = self.read_u16() {
+                                    self.increment_pointer(offset as usize);
                                     continue;
                                 }
                             }
                         }
-                        self.pointer += 2;
+                        self.increment_pointer(2);
                     }
                     Op::Jump => {
-                        if let Some(offset) = self.read_u16(chunk) {
-                            self.pointer += offset as usize;
+                        if let Some(offset) = self.read_u16() {
+                            self.increment_pointer(offset as usize);
                             continue;
                         }
-                        self.pointer += 2;
+                        self.increment_pointer(2);
                     }
                     Op::Loop => {
-                        if let Some(offset) = self.read_u16(chunk) {
-                            self.pointer -= offset as usize;
+                        if let Some(offset) = self.read_u16() {
+                            self.decrement_pointer(offset as usize);
                             continue;
                         }
-                        self.pointer += 2;
+                        self.decrement_pointer(2);
                     }
                 }   
             }
         }
+    }
+
+    fn pop(&mut self) -> Option<Value> {
+        self.stack.pop()
+    }
+
+    fn push(&mut self, value: Value) {
+        self.stack.push(value);
     }
 
     fn peek(&self, distance: usize) -> Option<Value> {
@@ -197,10 +252,10 @@ impl Machine {
         &mut self,
         op: fn(a: Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let a = self.stack.pop();
+        let a = self.pop();
         if let Some(a) = a {
             let result = op(a)?;
-            self.stack.push(result);
+            self.push(result);
             return Ok(());
         }
         todo!("Handle empty stack on unary op");
@@ -210,12 +265,12 @@ impl Machine {
         &mut self,
         op: fn(a: Value, b: Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let b = self.stack.pop();
-        let a = self.stack.pop();
+        let b = self.pop();
+        let a = self.pop();
         if let Some(a) = a {
             if let Some(b) = b {
                 let result = op(a, b)?;
-                self.stack.push(result);
+                self.push(result);
                 return Ok(());
             }
         }
@@ -242,7 +297,7 @@ mod tests {
         chunk.write_u8(Op::Return.into(), &span);
 
         let mut machine = Machine::new();
-        let result = machine.run(&chunk);
+        let result = machine.run();
         assert_eq!(result, Ok(()));
     }
 

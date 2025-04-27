@@ -96,7 +96,7 @@ impl Iterator for Lexer<'_> {
                 Some(Err(match err {
                     Error::SyntaxError(SyntaxError::NonAsciiToken) => {
                         Error::SyntaxError(SyntaxError::UnexpectedToken {
-                            token: self.inner.slice().to_string(),
+                            found: self.inner.slice().to_string(),
                             span: span.into(),
                         })
                     }

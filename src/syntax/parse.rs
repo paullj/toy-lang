@@ -1,7 +1,5 @@
 use std::iter::Peekable;
 
-use miette::{Context, LabeledSpan};
-
 use crate::{
     Lexer, Token,
     error::{Error, SyntaxError},
@@ -12,18 +10,18 @@ use super::ast::{Operator, Tree};
 
 pub struct Parser<'a> {
     lexer: Peekable<Lexer<'a>>,
-    _contents: &'a str,
+    contents: &'a str,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
             lexer: Lexer::new(input).peekable(),
-            _contents: input,
+            contents: input,
         }
     }
 
-    fn expect(&mut self, expected: Token, unexpected: &str) -> Result<Token, miette::Error> {
+    fn expect(&mut self, expected: Token, unexpected: &str) -> Result<Token, Error> {
         self.expect_where(|next| next == expected, unexpected)
     }
 
@@ -31,31 +29,26 @@ impl<'a> Parser<'a> {
         &mut self,
         mut check: impl FnMut(Token) -> bool,
         unexpected: &str,
-    ) -> Result<Token, miette::Error> {
+    ) -> Result<Token, Error> {
         match self.lexer.next() {
             Some(Ok((token, _))) if check(token.clone()) => Ok(token),
-            Some(Ok((token, span))) => Err(miette::miette! {
-                labels = vec![
-                    LabeledSpan::at(span, "here"),
-                ],
-                help = format!("Expected {token:?}"),
-                "{unexpected}",
-            }),
+            Some(Ok((token, span))) => Err(Error::SyntaxError(SyntaxError::UnexpectedToken {
+                found: token.to_string(),
+                span: span.into(),
+            })),
             Some(Err(e)) => todo!("Figure out what error to return here"),
-            None => Err(miette::miette! {
-                "{unexpected}",
-            }),
+            None => Err(Error::SyntaxError(SyntaxError::UnexpectedEOF)),
         }
     }
 
-    pub(crate) fn parse(&mut self) -> Result<Tree<'a>, miette::Error> {
+    pub(crate) fn parse(&mut self) -> Result<Tree<'a>, Error> {
         match self.parse_group(0) {
             Ok(tree) => Ok(Tree::Construct(Operator::Root, tree, 0..0)),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    fn parse_group(&mut self, min_bp: u8) -> Result<Vec<Tree<'a>>, miette::Error> {
+    fn parse_group(&mut self, min_bp: u8) -> Result<Vec<Tree<'a>>, Error> {
         let mut declarations = Vec::new();
         loop {
             let token = match self.lexer.peek() {
@@ -80,7 +73,7 @@ impl<'a> Parser<'a> {
         return Ok(declarations);
     }
 
-    fn parse_declaration(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
+    fn parse_declaration(&mut self, min_bp: u8) -> Result<Tree<'a>, Error> {
         let (token, span) = match self.lexer.peek() {
             Some(Ok((token, span))) => (token, span.clone()),
             Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
@@ -93,12 +86,12 @@ impl<'a> Parser<'a> {
                 self.lexer.next();
 
                 // Parse identifier
-                let identifier = match self.lexer.next() {
-                    Some(Ok((Token::Identifier(name), span))) => {
-                        Tree::Atom(Atom::Identifier(name.into()), span)
-                    }
-                    Some(Ok((token, span))) => {
-                        return Err(Error::SyntaxError(
+                let identifier =
+                    match self.lexer.next() {
+                        Some(Ok((Token::Identifier(name), span))) => {
+                            Tree::Atom(Atom::Identifier(name.into()), span)
+                        }
+                        Some(Ok((token, span))) => return Err(Error::SyntaxError(
                             SyntaxError::InvalidVariableDeclaration {
                                 span: span.into(),
                                 expected: "identifier".into(),
@@ -107,12 +100,10 @@ impl<'a> Parser<'a> {
                                     "Variable declaration must be followed by a valid identifier"
                                         .into(),
                             },
-                        ))
-                        .wrap_err("in variable declaration");
-                    }
-                    Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
-                    None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
-                };
+                        )),
+                        Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
+                        None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
+                    };
 
                 // Parse assignment
                 match self.lexer.peek() {
@@ -124,8 +115,7 @@ impl<'a> Parser<'a> {
                             span: span.clone().into(),
                             suggestion: "Use single '=' for assignment, '==' is for comparison"
                                 .into(),
-                        }))
-                        .wrap_err("in variable declaration");
+                        }));
                     }
                     Some(Ok((token, span))) => {
                         return Err(Error::SyntaxError(SyntaxError::MissingToken {
@@ -133,24 +123,26 @@ impl<'a> Parser<'a> {
                             expected: "=".into(),
                             suggestion: "Variable declaration requires an initializer with '='"
                                 .into(),
-                        }))
-                        .wrap_err("in variable declaration");
+                        }));
                     }
                     Some(Err(e)) => todo!("Do some error handling in declaration parsing"),
                     None => return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF).into()),
                 }
 
                 let value = self
-                    .parse_expression_within(0)
-                    .wrap_err("in variable declaration expression")?;
+                    .parse_expression_within(0)?;
 
-                Ok(Tree::Construct(Operator::Let, vec![identifier, value], span))
+                Ok(Tree::Construct(
+                    Operator::Let,
+                    vec![identifier, value],
+                    span,
+                ))
             }
             _ => self.parse_statement(min_bp),
         }
     }
 
-    fn parse_statement(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
+    fn parse_statement(&mut self, min_bp: u8) -> Result<Tree<'a>, Error> {
         let (token, span) = match self.lexer.peek() {
             Some(Ok((token, span))) => (token, span.clone()),
             Some(Err(err)) => todo!("Do some error handling in declaration parsing"),
@@ -167,7 +159,7 @@ impl<'a> Parser<'a> {
             }
             Token::If => {
                 self.expect(Token::If, "expected if")?;
-                let condition = match self.parse_expression_within(min_bp)  {
+                let condition = match self.parse_expression_within(min_bp) {
                     Ok(tree) => tree,
                     Err(_) => todo!("error handle expression parsing in if condition"),
                 };
@@ -175,7 +167,10 @@ impl<'a> Parser<'a> {
                 let group = self.parse_group(min_bp)?;
                 self.expect(Token::RightBrace, "expected '}'")?;
 
-                let mut args = vec![condition, Tree::Construct(Operator::Group, group, span.clone())];
+                let mut args = vec![
+                    condition,
+                    Tree::Construct(Operator::Group, group, span.clone()),
+                ];
 
                 let else_branch = match self.lexer.peek() {
                     Some(Ok((Token::Else, _))) => {
@@ -192,15 +187,19 @@ impl<'a> Parser<'a> {
             }
             Token::Loop => {
                 self.expect(Token::Loop, "expected loop")?;
-                 self.expect(Token::LeftBrace, "expected '{'")?;
+                self.expect(Token::LeftBrace, "expected '{'")?;
                 let group = self.parse_group(min_bp)?;
                 self.expect(Token::RightBrace, "expected '}'")?;
 
-                Ok(Tree::Construct(Operator::Loop, vec![Tree::Construct(Operator::Group, group, span.clone())], span))
+                Ok(Tree::Construct(
+                    Operator::Loop,
+                    vec![Tree::Construct(Operator::Group, group, span.clone())],
+                    span,
+                ))
             }
             Token::While => {
                 self.expect(Token::While, "expected while")?;
-                let condition = match self.parse_expression_within(min_bp)  {
+                let condition = match self.parse_expression_within(min_bp) {
                     Ok(tree) => tree,
                     Err(_) => todo!("error handle expression parsing in if condition"),
                 };
@@ -208,7 +207,14 @@ impl<'a> Parser<'a> {
                 let group = self.parse_group(min_bp)?;
                 self.expect(Token::RightBrace, "expected '}'")?;
 
-                Ok(Tree::Construct(Operator::While, vec![condition, Tree::Construct(Operator::Group, group, span.clone())], span))
+                Ok(Tree::Construct(
+                    Operator::While,
+                    vec![
+                        condition,
+                        Tree::Construct(Operator::Group, group, span.clone()),
+                    ],
+                    span,
+                ))
             }
             Token::LeftBrace => {
                 self.expect(Token::LeftBrace, "expected '{'")?;
@@ -220,7 +226,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expression_within(&mut self, min_bp: u8) -> Result<Tree<'a>, miette::Error> {
+    fn parse_expression_within(&mut self, min_bp: u8) -> Result<Tree<'a>, Error> {
         let (token, span) = match self.lexer.next() {
             Some(Ok((token, span))) => (token, span),
             Some(Err(err)) => {
@@ -229,11 +235,11 @@ impl<'a> Parser<'a> {
                 // } else {
                 //     "looking for a statement".to_string()
                 // };
-                return Err(err).wrap_err("on the left side of the expression");
+                return Err(err);
             }
             None => {
                 // TODO: Handle EOF properly
-                return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF)).wrap_err("ahh why!");
+                return Err(Error::SyntaxError(SyntaxError::UnexpectedEOF));
                 // if let Some((op, arg)) = looking_for {
                 //     return Err(
                 //         Error::SyntaxError(SyntaxError::UnexpectedEOF)
@@ -253,15 +259,13 @@ impl<'a> Parser<'a> {
             Token::False => Tree::Atom(Atom::Bool(false), span),
             Token::LeftParenthesis => {
                 let lhs = self
-                    .parse_expression_within(0)
-                    .wrap_err("in bracketed expression")?;
+                    .parse_expression_within(0)?;
 
                 self.expect(
                     Token::RightParenthesis,
                     "Unexpected end to bracketed expression",
-                )
-                .wrap_err("after bracketed expression")?;
-        
+                )?;
+
                 Tree::Construct(Operator::Group, vec![lhs], span)
             }
             Token::Return | Token::Bang | Token::Minus => {
@@ -278,13 +282,10 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                return Err(miette::miette! {
-                    labels = vec![
-                        LabeledSpan::at(span, "here"),
-                    ],
-                    help = format!("Expected token {token}, found in expression"),
-                    "Unexpected token {token} in expression",
-                });
+                return Err(Error::SyntaxError(SyntaxError::UnexpectedToken {
+                    found: token.to_string(),
+                    span: span.into(),
+                }));
             }
         };
         loop {
@@ -328,7 +329,7 @@ impl<'a> Parser<'a> {
                                 Ok(rhs) => {
                                     lhs = Tree::Construct(op, vec![lhs, rhs], span);
                                 }
-                                Err(err) => return Err(err).wrap_err(""),
+                                Err(err) => return Err(err),
                             }
                         }
                     }

@@ -1,10 +1,10 @@
 mod error;
-mod machine;
+mod interpreter;
 mod syntax;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use machine::{Machine, compiler::Compiler};
+use interpreter::{machine::Machine, compiler::Compiler};
 use syntax::{
     lex::{Lexer, Token},
     parse::Parser,
@@ -174,7 +174,8 @@ fn parse(source: &str) -> miette::Result<()> {
     match result {
         Ok(ast) => println!("{}", ast),
         Err(e) => {
-            return Err(e.with_source_code(source.to_string()));
+            let report: miette::Report = e.into();
+            return Err(report.with_source_code(source.to_string()));
         }
     }
     Ok(())
@@ -183,13 +184,14 @@ fn parse(source: &str) -> miette::Result<()> {
 fn compile(source: &str) -> miette::Result<()> {
     let compiler = Compiler::new(source);
     match compiler.compile() {
-        Ok(mut chunk) => {
+        Ok(function) => {
+            let chunk = function.get_chunk();
             println!("{}", chunk.disassemble());
             Ok(())
         }
         Err(e) => {
-            eprintln!("{}", e);
-            Ok(())
+             let report: miette::Report = e.into();
+            return Err(report.with_source_code(source.to_string()));
         }
     }
 }
@@ -200,7 +202,7 @@ fn run_file(path: &PathBuf, debug: bool) -> miette::Result<()> {
 
     if debug {
         // lex(source.as_str())?;
-        parse(source.as_str())?;
+        // parse(source.as_str())?;
         compile(&source)?;
     }
     run(&source)

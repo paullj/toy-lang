@@ -1,26 +1,33 @@
 use std::{
-    cmp::Ordering, fmt::Display, hash::{Hash, Hasher}, ops::{Add, Div, Mul, Neg, Not, Sub}
+    cmp::Ordering,
+    fmt::{write, Display},
+    hash::{Hash, Hasher},
+    ops::{Add, Div, Mul, Neg, Not, Sub},
 };
 
 use crate::error::RuntimeError;
+
+use super::function::Function;
 
 #[derive(Debug)]
 pub enum Value {
     Float(f64),
     Int(i64),
     Bool(bool),
-    String(String),   
+    String(String),
+    Function(Function),
 }
 
 impl Clone for Value {
-     fn clone(&self) -> Self {
-         match self {
-             Value::Float(a) => Value::Float(*a),
-             Value::Int(a) => Value::Int(*a),
-             Value::Bool(a) => Value::Bool(*a),
-             Value::String(a) => Value::String(a.clone()),
-         }
-     }
+    fn clone(&self) -> Self {
+        match self {
+            Value::Float(a) => Value::Float(*a),
+            Value::Int(a) => Value::Int(*a),
+            Value::Bool(a) => Value::Bool(*a),
+            Value::String(a) => Value::String(a.clone()),
+            Value::Function(function) => Value::Function(function.clone()),
+        }
+    }
 }
 
 impl Display for Value {
@@ -30,6 +37,7 @@ impl Display for Value {
             Value::Int(a) => write!(f, "{}", a),
             Value::Bool(a) => write!(f, "{}", a),
             Value::String(a) => write!(f, "{}", a),
+            Value::Function(function) => write!(f, "{}", function.name),
         }
     }
 }
@@ -49,7 +57,7 @@ impl Add for Value {
             (Value::String(a), Value::Float(b)) => Ok(Value::String(a + &b.to_string())),
             (Value::Float(a), Value::String(b)) => Ok(Value::String(a.to_string() + &b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "+".to_string()
+                operation: "+".to_string(),
             }),
         }
     }
@@ -65,7 +73,7 @@ impl Sub for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 - b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "-".to_string()
+                operation: "-".to_string(),
             }),
         }
     }
@@ -81,7 +89,7 @@ impl Mul for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 * b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "*".to_string()
+                operation: "*".to_string(),
             }),
         }
     }
@@ -97,7 +105,7 @@ impl Div for Value {
             (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a / b as f64)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 / b)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "/".to_string()
+                operation: "/".to_string(),
             }),
         }
     }
@@ -111,7 +119,7 @@ impl Neg for Value {
             Value::Float(a) => Ok(Value::Float(-a)),
             Value::Int(a) => Ok(Value::Int(-a)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "-".to_string()
+                operation: "-".to_string(),
             }),
         }
     }
@@ -124,7 +132,7 @@ impl Not for Value {
         match self {
             Value::Bool(a) => Ok(Value::Bool(!a)),
             _ => Err(RuntimeError::InvalidOperation {
-                operation: "!".to_string()
+                operation: "!".to_string(),
             }),
         }
     }
@@ -160,21 +168,20 @@ impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
             Value::Float(a) => {
-                // TODO: Support hashable NaN and Infinity
-                // TODO: Do we want NaN and Infinity to be possible values in the language?
-                if a.is_nan() {
-                    f64::NAN.to_bits().hash(state);
-                } else if a.is_infinite() {
-                    f64::INFINITY.to_bits().hash(state);
-                } else {
-                    a.to_bits().hash(state);
-                }
-            },
+                        // TODO: Support hashable NaN and Infinity
+                        // TODO: Do we want NaN and Infinity to be possible values in the language?
+                        if a.is_nan() {
+                            f64::NAN.to_bits().hash(state);
+                        } else if a.is_infinite() {
+                            f64::INFINITY.to_bits().hash(state);
+                        } else {
+                            a.to_bits().hash(state);
+                        }
+                    }
             Value::Int(a) => a.hash(state),
             Value::Bool(a) => a.hash(state),
             Value::String(a) => a.hash(state),
+            Value::Function(function) => todo!(),
         }
     }
 }
-
-

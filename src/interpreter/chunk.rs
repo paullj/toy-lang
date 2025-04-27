@@ -1,146 +1,11 @@
-use crate::{error::Span, machine::rle::RleVec, machine::value::Value};
+use crate::{error::Span, interpreter::rle::RleVec, interpreter::value::Value};
 use std::{collections::HashMap, fmt::Display};
 
-/// Represents an operation for the virtual machine
-/// We have limited operations, so we can use a u8 to represent them
-#[repr(u8)]
-pub enum Op {
-    Constant = 0,
-    Return,
-    True,
-    False,
-    Equal,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    Not,
-    Negate,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Echo,
-    Pop,
-    PopN,
-    DefineGlobal,
-    GetGlobal,
-    SetGlobal,
-    GetLocal,
-    SetLocal,
-    JumpIfFalse,
-    Jump,
-    Loop,
-}
-
-impl From<Op> for u8 {
-    fn from(op: Op) -> Self {
-        op as u8
-    }
-}
-
-impl From<u8> for Op {
-    fn from(op: u8) -> Self {
-        match op {
-            0 => Op::Constant,
-            1 => Op::Return,
-            2 => Op::True,
-            3 => Op::False,
-            4 => Op::Equal,
-            5 => Op::Less,
-            6 => Op::LessEqual,
-            7 => Op::Greater,
-            8 => Op::GreaterEqual,
-            9 => Op::Not,
-            10 => Op::Negate,
-            11 => Op::Add,
-            12 => Op::Subtract,
-            13 => Op::Multiply,
-            14 => Op::Divide,
-            15 => Op::Echo,
-            16 => Op::Pop,
-            17 => Op::PopN,
-            18 => Op::DefineGlobal,
-            19 => Op::GetGlobal,
-            20 => Op::SetGlobal,
-            21 => Op::GetLocal,
-            22 => Op::SetLocal,
-            23 => Op::JumpIfFalse,
-            24 => Op::Jump,
-            25 => Op::Loop,
-            26..=u8::MAX => panic!("Unknown opcode: {}", op),
-        }
-    }
-}
-
-impl Op {
-    pub fn size(&self) -> usize {
-        match self {
-            Op::Constant => 2,
-            Op::Return => 1,
-            Op::True => 1,
-            Op::False => 1,
-            Op::Not => 1,
-            Op::Negate => 1,
-            Op::Add => 1,
-            Op::Subtract => 1,
-            Op::Multiply => 1,
-            Op::Divide => 1,
-            Op::Equal => 1,
-            Op::Greater => 1,
-            Op::Less => 1,
-            Op::LessEqual => 1,
-            Op::GreaterEqual => 1,
-            Op::Echo => 1,
-            Op::Pop => 1,
-            Op::PopN => 2,
-            Op::DefineGlobal => 2,
-            Op::GetGlobal => 2,
-            Op::SetGlobal => 2,
-            Op::GetLocal => 2,
-            Op::SetLocal => 2,
-            Op::JumpIfFalse => 3,
-            Op::Jump => 3,
-            Op::Loop => 3,
-        }
-    }
-}
-
-impl Display for Op {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Op::Return => write!(f, "RETURN"),
-            Op::Constant => write!(f, "CONSTANT"),
-            Op::True => write!(f, "TRUE"),
-            Op::False => write!(f, "FALSE"),
-            Op::Not => write!(f, "NOT"),
-            Op::Negate => write!(f, "NEGATE"),
-            Op::Add => write!(f, "ADD"),
-            Op::Subtract => write!(f, "SUBTRACT"),
-            Op::Multiply => write!(f, "MULTIPLY"),
-            Op::Divide => write!(f, "DIVIDE"),
-            Op::Equal => write!(f, "EQUAL"),
-            Op::Less => write!(f, "LESS"),
-            Op::Greater => write!(f, "GREATER"),
-            Op::LessEqual => write!(f, "LESS_EQUAL"),
-            Op::GreaterEqual => write!(f, "GREATER_EQUAL"),
-            Op::Echo => write!(f, "ECHO"),
-            Op::Pop => write!(f, "POP"),
-            Op::DefineGlobal => write!(f, "DEFINE_GLOBAL"),
-            Op::GetGlobal => write!(f, "GET_GLOBAL"),
-            Op::SetGlobal => write!(f, "SET_GLOBAL"),
-            Op::GetLocal => write!(f, "GET_LOCAL"),
-            Op::SetLocal => write!(f, "SET_LOCAL"),
-            Op::PopN => write!(f, "POP_N"),
-            Op::JumpIfFalse => write!(f, "JUMP_IF_FALSE"),
-            Op::Jump => write!(f, "JUMP"),
-            Op::Loop => write!(f, "LOOP"),
-        }
-    }
-}
+use super::op::Op;
 
 /// A chunk of bytecode representing a sequence of operations
 /// Each chunk contains a list of operations and a list of constants
+#[derive(Clone, Debug)]
 pub struct Chunk {
     ops: Vec<u8>,
     constants: Vec<Value>,
@@ -190,7 +55,8 @@ impl Display for Chunk {
                 Op::JumpIfFalse | Op::Jump | Op::Loop=> {
                     let first = self.read_u8(offset + 1);
                     let second = self.read_u8(offset + 2);
-                    write!(f, " {}, {}", first.map_or("?".to_string(), |o| o.to_string()), second.map_or("?".to_string(), |o| o.to_string()))?;
+                    let offset_u16 = u16::from_be_bytes([first.unwrap(), second.unwrap()]);
+                    write!(f, " {}", offset_u16)?;
                 }
                 _ => {}
             }
@@ -257,7 +123,7 @@ impl Chunk {
     }
 
     /// Disassembles the [`Chunk`] into a string
-    pub fn disassemble(&mut self) -> String {
+    pub fn disassemble(&self) -> String {
         self.to_string()
     }
 
