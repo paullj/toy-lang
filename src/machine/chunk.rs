@@ -30,6 +30,7 @@ pub enum Op {
     SetLocal,
     JumpIfFalse,
     Jump,
+    Loop,
 }
 
 impl From<Op> for u8 {
@@ -66,7 +67,8 @@ impl From<u8> for Op {
             22 => Op::SetLocal,
             23 => Op::JumpIfFalse,
             24 => Op::Jump,
-            _ => panic!("Unknown opcode: {}", op),
+            25 => Op::Loop,
+            26..=u8::MAX => panic!("Unknown opcode: {}", op),
         }
     }
 }
@@ -99,6 +101,7 @@ impl Op {
             Op::SetLocal => 2,
             Op::JumpIfFalse => 3,
             Op::Jump => 3,
+            Op::Loop => 3,
         }
     }
 }
@@ -131,6 +134,7 @@ impl Display for Op {
             Op::PopN => write!(f, "POP_N"),
             Op::JumpIfFalse => write!(f, "JUMP_IF_FALSE"),
             Op::Jump => write!(f, "JUMP"),
+            Op::Loop => write!(f, "LOOP"),
         }
     }
 }
@@ -147,7 +151,7 @@ pub struct Chunk {
 impl Display for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset = 0;
-        writeln!(f, "OFFS    SPAN OPERATION         C VALUE")?;
+        writeln!(f, "OFFS    SPAN OP               ARGS")?;
         writeln!(f, "----------------------------------------")?;
         while offset < self.ops.len() {
             write!(f, "{:04}", offset)?;
@@ -165,25 +169,28 @@ impl Display for Chunk {
                 Op::Constant => {
                     let constant_index = self.ops[offset + 1] as usize;
                     let constant_value = &self.constants[constant_index];
-                    write!(f, " {:>2} {}", constant_index, constant_value)?;
+                    write!(f, " `{}` @ {}", constant_value, constant_index)?;
                 }
                 Op::DefineGlobal => {
                     let global_index = self.ops[offset + 1] as usize;
                     let global_value = &self.constants[global_index];
-                    write!(f, " {:>2} {}", global_index, global_value)?;
+                    write!(f, " `{}` @ {}", global_value, global_index)?;
+
                 }
                 Op::GetGlobal => {
                     let global_index = self.ops[offset + 1] as usize;
                     let global_value = &self.constants[global_index];
-                    write!(f, " {:>2} {}", global_index, global_value)?;
+                    write!(f, " `{}` @ {}", global_value, global_index)?;
+
                 }
                 Op::PopN => {
                     let n = self.ops[offset + 1] as usize;
-                    write!(f, "    {}", n)?;
+                    write!(f, " {}", n)?;
                 }
-                Op::JumpIfFalse | Op::Jump => {
-                    let jump_offset = self.read_u16(offset + 1);
-                    write!(f, "    {}", jump_offset.map_or("?".to_string(), |o| o.to_string()))?;
+                Op::JumpIfFalse | Op::Jump | Op::Loop=> {
+                    let first = self.read_u8(offset + 1);
+                    let second = self.read_u8(offset + 2);
+                    write!(f, " {}, {}", first.map_or("?".to_string(), |o| o.to_string()), second.map_or("?".to_string(), |o| o.to_string()))?;
                 }
                 _ => {}
             }
@@ -212,16 +219,6 @@ impl Chunk {
     /// Reads a u8 from the [`Chunk`] at a specific index
     pub fn read_u8(&self, pointer: usize) -> Option<u8> {
         self.ops.get(pointer).map(|op| *op)
-    }
-
-    /// Reads a u16 from two u8s in the [`Chunk`] at a specific index
-    pub fn read_u16(&self, pointer: usize) -> Option<u16> {
-        if let Some(first) = self.read_u8(pointer) {
-            if let Some(second) = self.read_u8(pointer + 1) {
-                return Some((first as u16) << 8 | second as u16);
-            }
-        }
-        None
     }
 
     /// Writes an operation to the [`Chunk`]

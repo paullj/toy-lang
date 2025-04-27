@@ -1,11 +1,13 @@
-let a = 3
+echo "start"
 
-echo "a is " + a
-
-if a > 10 {
-    echo "a is greater than 10"
-} else {
-    echo "a is less than 10"
+if false {
+    echo "skip me"
 }
 
-echo "asdsd"
+if true {
+    echo "then branch"
+} else {
+    echo "else branch"
+}
+
+echo "done"

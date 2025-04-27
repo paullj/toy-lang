@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt};
 
-use crate::{error::Span, Token};
+use crate::error::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Atom<'a> {
@@ -34,6 +34,7 @@ pub enum Operator {
     Echo,
     Field,
     Let,
+    Loop,
     While,
     Group,
     Root,
@@ -80,72 +81,73 @@ impl Operator {
 pub enum Tree<'a> {
     Atom(Atom<'a>, Span),
     Construct(Operator, Vec<Tree<'a>>, Span),
-    // Fn {
-    //     name: Atom<'a>,
-    //     parameters: Vec<Token>,
-    //     body: Box<Tree<'a>>,
-    // },
-    // Call {
-    //     callee: Box<Tree<'a>>,
-    //     arguments: Vec<Tree<'a>>,
-    // },
-    // If {
-    //     condition: Box<Tree<'a>>,
-    //     yes: Vec<Tree<'a>>,
-    // },
 }
 
-impl fmt::Display for Tree<'_> {
-    // Display the tree in reverse polish notation
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'a> Tree<'a> {
+    fn fmt_with_indent(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        let pad = "  ".repeat(indent);
         match self {
-            Tree::Atom(atom, _) => match atom {
-                Atom::String(s) => write!(f, "\"{}\"", s),
-                Atom::Float(n) => write!(f, "{}", n),
-                Atom::Int(n) => write!(f, "{}", n),
-                Atom::Bool(b) => write!(f, "{}", b),
-                Atom::Identifier(id) => write!(f, "{}", id),
-            },
-            Tree::Construct(operator, tree, _) => {
-                write!(f, "(")?;
-                match operator {
-                    Operator::Plus => write!(f, "+"),
-                    Operator::Minus => write!(f, "-"),
-                    Operator::Asterisk => write!(f, "*"),
-                    Operator::Slash => write!(f, "/"),
-                    Operator::Bang => write!(f, "!"),
-                    Operator::Less => write!(f, "<"),
-                    Operator::Greater => write!(f, ">"),
-                    Operator::BangEqual => write!(f, "!="),
-                    Operator::LessEqual => write!(f, "<="),
-                    Operator::GreaterEqual => write!(f, ">="),
-                    Operator::EqualEqual => write!(f, "=="),
-                    Operator::And => write!(f, "and"),
-                    Operator::Or => write!(f, "or"),
-                    Operator::Return => write!(f, "return"),
-                    Operator::Group => write!(f, "group"),
-                    Operator::Echo => write!(f, "echo"),
-                    Operator::Let => write!(f, "let"),
-                    Operator::Equal => write!(f, "="),
-                    Operator::Root => write!(f, "root"),
-                    Operator::Call => write!(f, "call"),
-                    Operator::For => write!(f, "for"),
-                    Operator::Fn => write!(f, "fn"),
-                    Operator::Field => write!(f, "field"),
-                    Operator::While => write!(f, "while"),
-                    Operator::If => write!(f, "if"),
-                }?;
-                write!(
-                    f,
-                    " {}",
-                    tree.iter()
-                        .map(|t| format!("{}", t))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )?;
-                write!(f, ")")?;
+            Tree::Atom(atom, _) => {
+                writeln!(f, "{}{}", pad, atom)
+            }
+            Tree::Construct(op, children, _) => {
+                writeln!(f, "{}{}", pad, op)?;
+                for child in children {
+                    child.fmt_with_indent(f, indent + 1)?;
+                }
                 Ok(())
             }
         }
+    }
+}
+
+impl<'a> fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Operator::Plus => write!(f, "+"),
+            Operator::Minus => write!(f, "-"),
+            Operator::Asterisk => write!(f, "*"),
+            Operator::Slash => write!(f, "/"),
+            Operator::Bang => write!(f, "!"),
+            Operator::Less => write!(f, "<"),
+            Operator::Greater => write!(f, ">"),
+            Operator::BangEqual => write!(f, "!="),
+            Operator::LessEqual => write!(f, "<="),
+            Operator::GreaterEqual => write!(f, ">="),
+            Operator::EqualEqual => write!(f, "=="),
+            Operator::And => write!(f, "and"),
+            Operator::Or => write!(f, "or"),
+            Operator::Return => write!(f, "return"),
+            Operator::Group => write!(f, "group"),
+            Operator::Echo => write!(f, "echo"),
+            Operator::Let => write!(f, "let"),
+            Operator::Equal => write!(f, "="),
+            Operator::Root => write!(f, "root"),
+            Operator::Call => write!(f, "call"),
+            Operator::For => write!(f, "for"),
+            Operator::Fn => write!(f, "fn"),
+            Operator::Field => write!(f, "field"),
+            Operator::While => write!(f, "while"),
+            Operator::If => write!(f, "if"),
+            Operator::Loop => write!(f, "loop"),
+        }
+    }
+}
+
+impl fmt::Display for Atom<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Atom::String(s) => write!(f, "\"{}\"", s),
+            Atom::Float(n) => write!(f, "{}", n),
+            Atom::Int(n) => write!(f, "{}", n),
+            Atom::Bool(b) => write!(f, "{}", b),
+            Atom::Identifier(id) => write!(f, "{}", id),
+        }
+    }
+}
+
+impl fmt::Display for Tree<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        return self.fmt_with_indent(f, 0);
     }
 }

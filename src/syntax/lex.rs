@@ -186,6 +186,8 @@ pub(crate) enum Token {
     If,
     #[token("else")]
     Else,
+    #[token("loop")]
+    Loop,
     #[token("while")]
     While,
     #[token("for")]
@@ -240,6 +242,7 @@ impl Display for Token {
             Token::String(s) => write!(f, "\"{}\"", s),
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
+            Token::Loop => write!(f, "loop"),
             Token::While => write!(f, "while"),
             Token::For => write!(f, "for"),
             Token::Return => write!(f, "return"),

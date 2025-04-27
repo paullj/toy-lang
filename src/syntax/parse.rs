@@ -190,6 +190,26 @@ impl<'a> Parser<'a> {
 
                 Ok(Tree::Construct(Operator::If, args, span))
             }
+            Token::Loop => {
+                self.expect(Token::Loop, "expected loop")?;
+                 self.expect(Token::LeftBrace, "expected '{'")?;
+                let group = self.parse_group(min_bp)?;
+                self.expect(Token::RightBrace, "expected '}'")?;
+
+                Ok(Tree::Construct(Operator::Loop, vec![Tree::Construct(Operator::Group, group, span.clone())], span))
+            }
+            Token::While => {
+                self.expect(Token::While, "expected while")?;
+                let condition = match self.parse_expression_within(min_bp)  {
+                    Ok(tree) => tree,
+                    Err(_) => todo!("error handle expression parsing in if condition"),
+                };
+                self.expect(Token::LeftBrace, "expected '{'")?;
+                let group = self.parse_group(min_bp)?;
+                self.expect(Token::RightBrace, "expected '}'")?;
+
+                Ok(Tree::Construct(Operator::While, vec![condition, Tree::Construct(Operator::Group, group, span.clone())], span))
+            }
             Token::LeftBrace => {
                 self.expect(Token::LeftBrace, "expected '{'")?;
                 let group = self.parse_group(min_bp)?;

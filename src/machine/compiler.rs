@@ -54,28 +54,28 @@ impl<'a> Compiler<'a> {
         match atom {
             Atom::Float(n) => {
                 if let Some(constant) = self.chunk.write_constant(Value::Float(*n)) {
-                    self.emit_op_with_arg(Op::Constant, constant, span);
+                    self.emit_op_with_args(Op::Constant, &[constant], span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
             }
             Atom::Int(n) => {
                 if let Some(constant) = self.chunk.write_constant(Value::Int(*n)) {
-                    self.emit_op_with_arg(Op::Constant, constant, span);
+                    self.emit_op_with_args(Op::Constant, &[constant], span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
             }
             Atom::Bool(b) => {
                 if let Some(constant) = self.chunk.write_constant(Value::Bool(*b)) {
-                    self.emit_op_with_arg(Op::Constant, constant, span);
+                    self.emit_op_with_args(Op::Constant, &[constant], span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
             }
             Atom::String(s) => {
                 if let Some(constant) = self.chunk.write_constant(Value::String(s.to_string())) {
-                    self.emit_op_with_arg(Op::Constant, constant, span);
+                    self.emit_op_with_args(Op::Constant, &[constant], span);
                 } else {
                     return Err("Too many constants".to_string());
                 }
@@ -85,7 +85,7 @@ impl<'a> Compiler<'a> {
                     Ok(result) => result,
                     Err(_) => todo!("Error"),
                 };
-                self.emit_op_with_arg(get_op, arg, span);
+                self.emit_op_with_args(get_op, &[arg], span);
             }
         }
         Ok(())
@@ -182,7 +182,7 @@ impl<'a> Compiler<'a> {
                 if let Some(constant) = self.chunk.write_constant(Value::String(name.to_string())) {
                     self.compile_tree(&value)?;
                     if self.scope_depth == 0 {
-                        self.emit_op_with_arg(Op::DefineGlobal, constant, span);
+                        self.emit_op_with_args(Op::DefineGlobal, &[constant], span);
                     }
                 } else {
                     return Err("Too many constants".to_string());
@@ -194,19 +194,19 @@ impl<'a> Compiler<'a> {
                     Err(_) => todo!("Error"),
                 };
                 self.compile_tree(&value)?;
-                self.emit_op_with_arg(set_op, arg, span);
+                self.emit_op_with_args(set_op, &[arg], span);
             }
             (Operator::And, [left, right]) => {
                 self.compile_tree(&left)?;
-                let offset_jump = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+                let offset_jump = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
                 self.emit_op(Op::Pop, span);
                 self.compile_tree(right)?;
                 self.patch_jump(offset_jump);
             }
             (Operator::Or, [left, right]) => {
                 self.compile_tree(&left)?;
-                let else_jump = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
-                let end_jump = self.emit_op_with_args(Op::Jump, [0xff, 0xff], span);
+                let else_jump = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
+                let end_jump = self.emit_op_with_args(Op::Jump, &[0xff, 0xff], span);
 
                 self.patch_jump(else_jump);
                 self.emit_op(Op::Pop, span);
@@ -214,25 +214,60 @@ impl<'a> Compiler<'a> {
                 self.compile_tree(&right)?;
                 self.patch_jump(end_jump);
             }
-            (Operator::If, [condition, then_branch]) => {
-                self.compile_tree(&condition)?;
-                let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+            (Operator::If, [condition, then]) => {
+                self.compile_tree(condition)?;
+                let then_offset = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
                 self.emit_op(Op::Pop, span);
-                self.compile_tree(&then_branch)?;
+                self.compile_tree(then)?;
                 self.patch_jump(then_offset);
             }
-            (Operator::If, [condition, then_branch, else_branch]) => {
-                self.compile_tree(&condition)?;
-                let then_offset = self.emit_op_with_args(Op::JumpIfFalse, [0xff, 0xff], span);
+            (Operator::If, [condition, then, else_]) => {
+                self.compile_tree(condition)?;
+                let then_offset = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
                 self.emit_op(Op::Pop, span);
-                self.compile_tree(&then_branch)?;
+                self.compile_tree(&then)?;
 
-                let else_offset = self.emit_op_with_args(Op::Jump, [0xff, 0xff], span);
+                let else_offset = self.emit_op_with_args(Op::Jump, &[0xff, 0xff], span);
                 self.patch_jump(then_offset);
                 self.emit_op(Op::Pop, span);
 
-                self.compile_tree(&else_branch)?;
+                self.compile_tree(else_)?;
                 self.patch_jump(else_offset);
+            }
+            (Operator::While, [condition, then]) => {
+                let loop_start = self.chunk.count();
+                self.compile_tree(condition)?;
+
+                let jump_offset = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
+                self.emit_op(Op::Pop, span);
+
+                self.compile_tree(then)?;
+                let offset = self.chunk.count() + 3 - loop_start;
+                if offset > u16::MAX as usize {
+                    return Err("Loop body too large".to_string());
+                }
+                self.emit_op_with_args(
+                    Op::Loop,
+                    &[((offset >> 8) & 0xff) as u8, (offset & 0xff) as u8],
+                    span,
+                );
+
+                self.patch_jump(jump_offset);
+                self.emit_op(Op::Pop, span);
+            }
+            (Operator::Loop, [body]) => {
+                let loop_start = self.chunk.count();
+                self.compile_tree(body)?;
+
+                let offset = self.chunk.count() + 3 - loop_start;
+                if offset > u16::MAX as usize {
+                    return Err("Loop body too large".to_string());
+                }
+                self.emit_op_with_args(
+                    Op::Loop,
+                    &[((offset >> 8) & 0xff) as u8, (offset & 0xff) as u8],
+                    span,
+                );
             }
             (op, _) => todo!("Implement operator in compiler.rs {op:?}"),
         }
@@ -241,26 +276,23 @@ impl<'a> Compiler<'a> {
 
     /// Emits an operation to the chunk and returns the index of the operation
     fn emit_op(&mut self, op: Op, span: &Span) -> usize {
+        self.emit_op_with_args(op, &[], span)
+    }
+
+    /// Emits an operation with multiple arguments to the chunk and returns the index of the operation
+    fn emit_op_with_args(&mut self, op: Op, args: &[u8], span: &Span) -> usize {
         self.chunk.write_u8(op.into(), span);
-        self.chunk.count()
-    }
+        let offset = self.chunk.count();
+        for &arg in args {
+            self.chunk.write_u8(arg, span);
+        }
 
-    /// Emits an operation with a single argument to the chunk and returns the index of the operation
-    fn emit_op_with_arg(&mut self, op: Op, arg: u8, span: &Span) -> usize {
-        self.emit_op(op, span);
-        self.chunk.write_u8(arg, span);
-        self.chunk.count() - 1
-    }
-
-    /// Emits an operation with two arguments to the chunk and returns the index of the operation
-    fn emit_op_with_args(&mut self, op: Op, args: [u8; 2], span: &Span) -> usize {
-        self.emit_op(op, span);
-        self.chunk.write_u8(args[0], span);
-        self.chunk.write_u8(args[1], span);
-        self.chunk.count() - 2
+        offset
     }
 
     fn patch_jump(&mut self, offset: usize) {
+        // TODO: In crafting interpreters, they do this in two parts because they have a single pass compiler.
+        //       We _could_ compile a tree first then count the bytes and only apply it once we have the final size.
         let relative = self.chunk.count() - offset - 2;
         if relative > u16::MAX as usize {
             panic!("Too much code to jump over.");
@@ -304,7 +336,7 @@ impl<'a> Compiler<'a> {
         }
         let pops = self.locals.len() - keep;
         if pops > 0 {
-            self.emit_op_with_arg(Op::PopN, pops as u8, &(0..0).into());
+            self.emit_op_with_args(Op::PopN, &[pops as u8], &(0..0).into());
             self.locals.truncate(keep);
         }
     }

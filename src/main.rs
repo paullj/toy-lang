@@ -4,16 +4,13 @@ mod syntax;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use machine::{compiler::Compiler, Machine};
+use machine::{Machine, compiler::Compiler};
 use syntax::{
     lex::{Lexer, Token},
     parse::Parser,
 };
 
-use std::{
-    path::PathBuf,
-    process::ExitCode,
-};
+use std::{path::PathBuf, process::ExitCode};
 
 use clap::{
     Parser as ClapParser, Subcommand,
@@ -28,15 +25,24 @@ struct Arguments {
     #[arg(value_name = "PATH", index = 1)]
     path: Option<PathBuf>,
 
+    #[arg(short, long)]
+    debug: bool,
+
     #[command(subcommand)]
     cmd: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
+    /// Lex source into tokens
+    #[command(name = "lex")]
     Lex { source: String },
+    /// Parse source into an AST
+    #[command(name = "parse")]
     Parse { source: String },
-    Compile {source: String}
+    /// Compile sourceinto bytecode
+    #[command(name = "compile")]
+    Compile { source: String },
 }
 
 use miette::{Diagnostic, Report};
@@ -89,7 +95,7 @@ fn main() -> miette::Result<ExitCode> {
                 };
                 match compile(contents) {
                     Ok(_) => return Ok(ExitCode::SUCCESS),
-                    Err(e) => return Err(e)
+                    Err(e) => return Err(e),
                 }
             }
         }
@@ -97,7 +103,7 @@ fn main() -> miette::Result<ExitCode> {
 
     match args.path {
         Some(path) => {
-            run_file(&path)
+            run_file(&path, args.debug)
                 .map_err(|e| miette::miette!("Failed to run file {}: {}", path.display(), e))?;
         }
         None => {
@@ -151,7 +157,7 @@ fn lex(source: &str) -> miette::Result<()> {
         .collect();
 
     println!(
-        "Tokens: {}",
+        "{}",
         tokens
             .iter()
             .map(|t| format!("{:?}", t))
@@ -166,7 +172,7 @@ fn parse(source: &str) -> miette::Result<()> {
     let result = parser.parse();
 
     match result {
-        Ok(ast) => println!("AST: {}", ast.to_string()),
+        Ok(ast) => println!("{}", ast),
         Err(e) => {
             return Err(e.with_source_code(source.to_string()));
         }
@@ -180,29 +186,55 @@ fn compile(source: &str) -> miette::Result<()> {
         Ok(mut chunk) => {
             println!("{}", chunk.disassemble());
             Ok(())
-        },
+        }
         Err(e) => {
             eprintln!("{}", e);
             Ok(())
-        },
+        }
     }
 }
 
-fn run_file(path: &PathBuf) -> miette::Result<()> {
+fn run_file(path: &PathBuf, debug: bool) -> miette::Result<()> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| miette::miette!("Failed to read file {}: {}", path.display(), e))?;
 
-    // lex(source.as_str())?;
-    // parse(source.as_str())?;
-    compile(&source)?;
+    if debug {
+        // lex(source.as_str())?;
+        parse(source.as_str())?;
+        compile(&source)?;
+    }
     run(&source)
 }
 
 fn run(source: &str) -> miette::Result<()> {
     let mut machine = Machine::new();
     match machine.interpret(source) {
-        Ok(_) => Ok(()),
+        Ok(result) => {
+            println!(
+                "---\nProgram exited successfully. ({} + {})",
+                format_duration(result.compilation),
+                format_duration(result.execution)
+            );
+            Ok(())
+        }
         Err(e) => Err(e.into()),
+    }
+}
+
+fn format_duration(d: std::time::Duration) -> String {
+    let ns = d.as_nanos();
+    if ns < 1_000 {
+        format!("{}ns", ns)
+    } else if ns < 1_000_000 {
+        format!("{:.2}µs", ns as f64 / 1_000.0)
+    } else if ns < 1_000_000_000 {
+        format!("{:.2}ms", ns as f64 / 1_000_000.0)
+    } else if ns < 60_000_000_000 {
+        format!("{:.2}s", ns as f64 / 1_000_000_000.0)
+    } else if ns < 3600_000_000_000 {
+        format!("{:.2}min", ns as f64 / 60_000_000_000.0)
+    } else {
+        format!("{:.2}hrs", ns as f64 / 3600_000_000_000.0)
     }
 }
 

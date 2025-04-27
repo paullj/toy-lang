@@ -3,7 +3,7 @@ pub mod compiler;
 mod rle;
 mod value;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::{Duration, Instant}};
 
 use chunk::{Chunk, Op};
 use compiler::Compiler;
@@ -21,6 +21,11 @@ pub struct Machine {
     globals: HashMap<String, Value>,
 }
 
+pub(crate) struct ExecutionResult {
+    pub compilation: Duration,
+    pub execution: Duration,
+}
+
 impl Machine {
     pub fn new() -> Self {
         Self {
@@ -30,13 +35,19 @@ impl Machine {
         }
     }
 
-    pub(crate) fn interpret(&mut self, source: &str) -> miette::Result<()> {
+    pub(crate) fn interpret(&mut self, source: &str) -> miette::Result<ExecutionResult> {
+        let start = Instant::now();
         let compiler = Compiler::new(source);
         match compiler.compile() {
-            Ok(chunk) => match self.run(&chunk) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e.into()),
-            },
+            Ok(chunk) => {
+                let compilation_duration = start.elapsed();
+                let start = Instant::now();
+                self.run(&chunk)?;
+                Ok(ExecutionResult {
+                    compilation: compilation_duration,
+                    execution: start.elapsed(),
+                })
+            }
             Err(e) => todo!("Handle compile error: {}", e),
         }
     }
@@ -46,11 +57,14 @@ impl Machine {
         self.pointer += 1;
         code
     }
-
+    
     fn read_u16(&mut self, chunk: &Chunk) -> Option<u16> {
-        let code = chunk.read_u16(self.pointer);
-        self.pointer += 2;
-        code
+        if let Some(first) = self.read_u8(chunk) {
+            if let Some(second) = self.read_u8(chunk) {
+                return Some((first as u16) << 8 | second as u16);
+            }
+        }
+        None
     }
 
     fn read_constant<'a>(&mut self, chunk: &'a Chunk) -> &'a Value {
@@ -150,14 +164,25 @@ impl Machine {
                             if value == Value::Bool(false) {
                                 if let Some(offset) = self.read_u16(chunk) {
                                     self.pointer += offset as usize;
+                                    continue;
                                 }
                             }
                         }
+                        self.pointer += 2;
                     }
                     Op::Jump => {
                         if let Some(offset) = self.read_u16(chunk) {
                             self.pointer += offset as usize;
+                            continue;
                         }
+                        self.pointer += 2;
+                    }
+                    Op::Loop => {
+                        if let Some(offset) = self.read_u16(chunk) {
+                            self.pointer -= offset as usize;
+                            continue;
+                        }
+                        self.pointer += 2;
                     }
                 }   
             }
