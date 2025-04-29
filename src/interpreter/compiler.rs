@@ -8,9 +8,7 @@ use crate::{
     },
 };
 
-use super::{
-    chunk::Chunk, function::Function, op::Op, value::Value
-};
+use super::{chunk::Chunk, function::Function, op::Op, value::Value};
 
 pub(crate) struct Compiler<'a> {
     parser: Parser<'a>,
@@ -36,9 +34,9 @@ impl<'a> Compiler<'a> {
 
     pub(crate) fn compile(mut self) -> Result<Function, Error> {
         self.locals.borrow_mut().push(Local {
-             name: Cow::Borrowed(""),
-             depth: Some(0),
-         });
+            name: Cow::Borrowed(""),
+            depth: Some(0),
+        });
 
         let ast = self.parser.parse()?;
 
@@ -51,7 +49,7 @@ impl<'a> Compiler<'a> {
     fn compile_tree(&mut self, tree: &Tree<'a>) -> Result<(), Error> {
         match tree {
             Tree::Atom(atom, span) => self.compile_atom(atom, span),
-            Tree::Construct(op, args, span) => self.compile_cons(op, args, span),
+            Tree::Construct(op, args, span) => self.compile_constructs(op, args, span),
         }
     }
 
@@ -84,12 +82,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn compile_cons(
-        &mut self,
-        op: &Operator,
-        args: &[Tree<'a>],
-        span: &Span,
-    ) -> Result<(), Error> {
+    fn compile_constructs(&mut self, op: &Operator, args: &[Tree<'a>], span: &Span) -> Result<(), Error> {
         match (op, args) {
             (Operator::Root, args) => {
                 for value in args {
@@ -118,7 +111,7 @@ impl<'a> Compiler<'a> {
                     _ => unreachable!(),
                 };
             }
-            (Operator::Group, args) => {
+            (Operator::Block, args) => {
                 self.begin_scope();
                 for value in args {
                     self.compile_tree(&value)?;
@@ -159,11 +152,20 @@ impl<'a> Compiler<'a> {
             }
             (Operator::Let, [Tree::Atom(Atom::Identifier(name), _), value]) => {
                 if self.scope_depth != 0 {
-                    if self.locals.borrow().iter().filter(|x| x.name == *name).count() != 0 {
-                        return Err(Error::CompilerError(CompilerError::VariableAlreadyDeclared {
-                            name: name.to_string(),
-                            span: span.clone().into(),
-                        }));
+                    if self
+                        .locals
+                        .borrow()
+                        .iter()
+                        .filter(|x| x.name == *name)
+                        .count()
+                        != 0
+                    {
+                        return Err(Error::CompilerError(
+                            CompilerError::VariableAlreadyDeclared {
+                                name: name.to_string(),
+                                span: span.clone().into(),
+                            },
+                        ));
                     } else {
                         let loc = Local {
                             name: name.clone(),
@@ -180,7 +182,6 @@ impl<'a> Compiler<'a> {
                 if self.scope_depth == 0 {
                     self.emit_op_with_args(Op::DefineGlobal, &[constant], span);
                 }
-
             }
             (Operator::Equal, [Tree::Atom(Atom::Identifier(name), _), value]) => {
                 let (arg, _, set_op) = match self.get_variable(name) {
@@ -208,14 +209,14 @@ impl<'a> Compiler<'a> {
                 self.compile_tree(&right)?;
                 self.patch_jump(end_jump);
             }
-            (Operator::If, [condition, then]) => {
+            (Operator::If, [condition, then@ Tree::Construct(Operator::Block, _, _)]) => {
                 self.compile_tree(condition)?;
                 let then_offset = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
                 self.emit_op(Op::Pop, span);
                 self.compile_tree(then)?;
                 self.patch_jump(then_offset);
             }
-            (Operator::If, [condition, then, else_]) => {
+            (Operator::If, [condition, then@ Tree::Construct(Operator::Block, _, _), else_@ Tree::Construct(Operator::Block, _, _)]) => {
                 self.compile_tree(condition)?;
                 let then_offset = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
                 self.emit_op(Op::Pop, span);
@@ -228,7 +229,7 @@ impl<'a> Compiler<'a> {
                 self.compile_tree(else_)?;
                 self.patch_jump(else_offset);
             }
-            (Operator::While, [condition, then]) => {
+            (Operator::While, [condition, then@ Tree::Construct(Operator::Block, _, _)]) => {
                 let loop_start = self.chunk.borrow().count();
                 self.compile_tree(condition)?;
 
@@ -249,7 +250,7 @@ impl<'a> Compiler<'a> {
                 self.patch_jump(jump_offset);
                 self.emit_op(Op::Pop, span);
             }
-            (Operator::Loop, [body]) => {
+            (Operator::Loop, [body @ Tree::Construct(Operator::Block, _, _)]) => {
                 let loop_start = self.chunk.borrow().count();
                 self.compile_tree(body)?;
 
@@ -263,11 +264,18 @@ impl<'a> Compiler<'a> {
                     span,
                 );
             }
+            (
+                Operator::Fn,
+                [
+                    Tree::Atom(Atom::Identifier(name), _),
+                    args @ ..,
+                    body @ Tree::Construct(Operator::Block, _, _),
+                ],
+            ) => {}
             (op, _) => todo!("Implement operator in compiler.rs {op:?}"),
         }
         Ok(())
     }
-
 
     fn write_constant(&mut self, value: Value) -> Result<u8, Error> {
         if let Some(constant) = self.chunk.borrow_mut().write_constant(value) {
@@ -299,14 +307,21 @@ impl<'a> Compiler<'a> {
         if relative > u16::MAX as usize {
             panic!("Too much code to jump over.");
         }
-        self.chunk.borrow_mut().update_u8(offset, ((relative >> 8) & 0xff) as u8);
-        self.chunk.borrow_mut().update_u8(offset + 1, (relative & 0xff) as u8);
+        self.chunk
+            .borrow_mut()
+            .update_u8(offset, ((relative >> 8) & 0xff) as u8);
+        self.chunk
+            .borrow_mut()
+            .update_u8(offset + 1, (relative & 0xff) as u8);
     }
 
     fn get_variable(&mut self, name: &Cow<str>) -> Result<(u8, Op, Op), ()> {
         if let Some(local_arg) = self.resolve_local(name) {
             return Ok((local_arg, Op::GetLocal, Op::SetLocal));
-        } else if let Some(global_arg) = self.chunk.borrow_mut().write_constant(Value::String(name.to_string()))
+        } else if let Some(global_arg) = self
+            .chunk
+            .borrow_mut()
+            .write_constant(Value::String(name.to_string()))
         {
             return Ok((global_arg, Op::GetGlobal, Op::SetGlobal));
         }

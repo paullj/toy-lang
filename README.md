@@ -2,26 +2,29 @@
 
 This project is a simple toy programming language designed for learning and exploration.
 
-Things to do:
+## Things to do:
 
  * Parser
     * Good error handling
  * VM
     * Get basic features in. ie finish crafting interpreters
+    * functions
+    * structs
 
-Longer Term:
+## Longer Term:
 
  * Type checker
- * LSP
  * Nice lang features
-    * f strings
     * lists + dicts 
-    * enums
-    * traits? or equiv
+    * for loops with iterators
     * option
     * result
- * Automatic documentation from docstring
+    * enums
+    * f strings
+    * traits? or equiv
+ * LSP
  * Imports
+ * Automatic documentation from docstring
  * Async? go-like
  * JIT
  * Online playground - WASM?
@@ -35,17 +38,27 @@ Longer Term:
 Optimisations
 * https://docs.rs/tinyvec/latest/tinyvec/enum.TinyVec.html
 
-
-Language Features
+## Lang Ideas
 
 ```
-// A person is 
-struct Person {
-    pub name: string
-    age: int = 0
+-- 
+struct Dog {
+    pub name: Str
+    age: Int
 
-    fn greet(other: string) -> string {
-        return "Hello {other}!"
+    fn new(name: Str) -> Self {
+        return Dog {
+            name: name,
+            age: 0
+        }
+    }
+
+    fn bark(self) {
+        return "Woof!"
     }
 }
+
+let dog: Dog = Dog::new("Sally")
+
+echo dog.bark()
 ```

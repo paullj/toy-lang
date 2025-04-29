@@ -67,6 +67,19 @@ pub enum SyntaxError {
         suggestion: String,
     },
 
+    #[error("Invalid function declaration")]
+    #[diagnostic(code(syntax::invalid_function_declaration))]
+    InvalidFunctionDeclaration {
+        #[label("Found {found} here instead of {expected}")]
+        span: SourceSpan,
+
+        expected: String,
+        found: String,
+
+        #[help]
+        suggestion: String,
+    },
+
     #[error("Invalid operator usage")]
     #[diagnostic(code(syntax::invalid_operator))]
     InvalidOperator {

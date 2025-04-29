@@ -36,7 +36,7 @@ pub enum Operator {
     Let,
     Loop,
     While,
-    Group,
+    Block,
     Root,
     If,
 }
@@ -118,7 +118,7 @@ impl<'a> fmt::Display for Operator {
             Operator::And => write!(f, "and"),
             Operator::Or => write!(f, "or"),
             Operator::Return => write!(f, "return"),
-            Operator::Group => write!(f, "group"),
+            Operator::Block => write!(f, "block"),
             Operator::Echo => write!(f, "echo"),
             Operator::Let => write!(f, "let"),
             Operator::Equal => write!(f, "="),
@@ -141,7 +141,7 @@ impl fmt::Display for Atom<'_> {
             Atom::Float(n) => write!(f, "{}", n),
             Atom::Int(n) => write!(f, "{}", n),
             Atom::Bool(b) => write!(f, "{}", b),
-            Atom::Identifier(id) => write!(f, "{}", id),
+            Atom::Identifier(id) => write!(f, ":{}", id),
         }
     }
 }
