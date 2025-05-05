@@ -1,0 +1,35 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug running .toy file",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=toy-lang",
+                    "--package=toy-lang"
+                ],
+                "filter": {
+                    "name": "toy-lang",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "${input:fileToRun}"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "fileToRun",
+            "type": "promptString",
+            "description": "Enter the path to the file to run (e.g., examples/loops.toy)"
+        }
+    ]
+}
