@@ -5,7 +5,7 @@ use super::op::Op;
 
 /// A chunk of bytecode representing a sequence of operations
 /// Each chunk contains a list of operations and a list of constants
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Chunk {
     ops: Vec<u8>,
     constants: Vec<Value>,
@@ -40,19 +40,17 @@ impl Display for Chunk {
                     let global_index = self.ops[offset + 1] as usize;
                     let global_value = &self.constants[global_index];
                     write!(f, " `{}` @ {}", global_value, global_index)?;
-
                 }
                 Op::GetGlobal => {
                     let global_index = self.ops[offset + 1] as usize;
                     let global_value = &self.constants[global_index];
                     write!(f, " `{}` @ {}", global_value, global_index)?;
-
                 }
                 Op::PopN => {
                     let n = self.ops[offset + 1] as usize;
                     write!(f, " {}", n)?;
                 }
-                Op::JumpIfFalse | Op::Jump | Op::Loop=> {
+                Op::JumpIfFalse | Op::Jump | Op::Loop => {
                     let first = self.read_u8(offset + 1);
                     let second = self.read_u8(offset + 2);
                     let offset_u16 = u16::from_be_bytes([first.unwrap(), second.unwrap()]);
@@ -68,16 +66,6 @@ impl Display for Chunk {
 }
 
 impl Chunk {
-    // / Creates a new empty [`Chunk`]
-    pub fn new() -> Self {
-        Self {
-            ops: Vec::new(),
-            constants: Vec::new(),
-            spans: RleVec::new(),
-            constants_map: HashMap::new(),
-        }
-    }
-
     pub fn count(&self) -> usize {
         self.ops.len()
     }
@@ -147,7 +135,7 @@ mod tests {
 
     #[rstest]
     fn test_chunk_write() {
-        let mut chunk = Chunk::new();
+        let mut chunk = Chunk::default();
         assert_eq!(chunk.ops.len(), 0);
 
         chunk.write_u8(Op::Return.into(), &Span { start: 0, end: 1 });
@@ -159,14 +147,14 @@ mod tests {
 
     #[rstest]
     fn test_chunk_add_constant() {
-        let mut chunk = Chunk::new();
+        let mut chunk = Chunk::default();
         chunk.write_constant(Value::Int(1));
         assert_eq!(chunk.constants.len(), 1);
     }
 
     #[rstest]
     fn test_chunk_disassemble() {
-        let mut chunk = Chunk::new();
+        let mut chunk = Chunk::default();
 
         let span = Span { start: 0, end: 1 };
         chunk.write_u8(Op::Constant.into(), &span);

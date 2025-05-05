@@ -1,13 +1,22 @@
 use std::fmt::Display;
-use std::rc::Rc;
 
 use super::chunk::Chunk;
 
 #[derive(Debug)]
 pub struct Function {
-    arity: usize,
-    chunk: Rc<Chunk>,
     pub name: String,
+    pub arity: u8,
+    pub chunk: Chunk,
+}
+
+impl Function {
+    pub fn new(name: String, arity: u8) -> Self {
+        Function {
+            name,
+            arity,
+            chunk: Chunk::default(),
+        }
+    }
 }
 
 impl PartialOrd for Function {
@@ -17,7 +26,7 @@ impl PartialOrd for Function {
 }
 
 impl PartialEq for Function {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _: &Self) -> bool {
         false
     }
 }
@@ -34,18 +43,5 @@ impl Clone for Function {
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "<fn {}>", self.name)
-    }
-}
-impl Function {
-    pub fn new(chunk: &Rc<Chunk>) -> Self {
-        Function {
-            arity: 0,
-            chunk: Rc::clone(chunk),
-            name: "".to_string(),
-        }
-    }
-
-    pub fn get_chunk(&self) -> Rc<Chunk> {
-         Rc::clone(&self.chunk)
     }
 }

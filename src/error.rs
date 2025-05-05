@@ -39,11 +39,12 @@ pub enum SyntaxError {
 
     #[error("Encountered an unexpected token")]
     #[diagnostic(code(syntax::unexpected_token))]
-    #[diagnostic(help("Encountered an unexpected token '{found}'"))]
+    #[diagnostic(help("Encountered an unexpected token '{found}' but expected '{expected}'"))]
     UnexpectedToken {
         found: String,
         #[label(primary "this")]
         span: SourceSpan,
+        expected: String,
     },
 
     #[error("Unterminated string")]
@@ -147,6 +148,20 @@ pub enum RuntimeError {
     #[diagnostic(code(runtime::invalid_operation))]
     #[diagnostic(help("{operation} is not defined for the given operands"))]
     InvalidOperation { operation: String },
+
+    #[error("internal error")]
+    #[diagnostic(code(runtime::internal_error))]
+    #[diagnostic(help("internal error"))]
+    InternalError(InternalError)
+}
+
+#[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
+#[error("internal error")]
+pub enum InternalError {
+    #[error("no frame")]
+    #[diagnostic(code(internal::no_frame))]
+    #[diagnostic(help("No active frame"))]
+    NoFrame,
 }
 
 impl From<ParseIntError> for Error {

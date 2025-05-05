@@ -98,6 +98,7 @@ impl Iterator for Lexer<'_> {
                         Error::SyntaxError(SyntaxError::UnexpectedToken {
                             found: self.inner.slice().to_string(),
                             span: span.into(),
+                            expected: "MAKE THIS BETTER".to_string(),
                         })
                     }
                     error => error,

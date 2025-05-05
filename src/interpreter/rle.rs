@@ -1,6 +1,6 @@
 /// A run-length encoded vector for storing any type
 /// This is more memory efficient when there are many consecutive identical values
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RleVec<T> {
     /// The values of each run
     values: Vec<T>,

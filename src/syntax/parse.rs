@@ -36,6 +36,7 @@ impl<'a> Parser<'a> {
             Some(Ok((token, span))) => Err(Error::SyntaxError(SyntaxError::UnexpectedToken {
                 found: token.to_string(),
                 span: span.into(),
+                expected: unexpected.into(),
             })),
             Some(Err(e)) => todo!("Figure out what error to return here"),
             None => Err(Error::SyntaxError(SyntaxError::UnexpectedEOF)),
@@ -328,6 +329,7 @@ impl<'a> Parser<'a> {
                 return Err(Error::SyntaxError(SyntaxError::UnexpectedToken {
                     found: token.to_string(),
                     span: span.into(),
+                    expected: "expression".into(),
                 }));
             }
         };

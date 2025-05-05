@@ -169,9 +169,7 @@ fn lex(source: &str) -> miette::Result<()> {
 
 fn parse(source: &str) -> miette::Result<()> {
     let mut parser = Parser::new(source);
-    let result = parser.parse();
-
-    match result {
+    match parser.parse(){
         Ok(ast) => println!("{}", ast),
         Err(e) => {
             let report: miette::Report = e.into();
@@ -185,7 +183,7 @@ fn compile(source: &str) -> miette::Result<()> {
     let compiler = Compiler::new(source);
     match compiler.compile() {
         Ok(function) => {
-            let chunk = function.get_chunk();
+            let chunk = function.chunk;
             println!("{}", chunk.disassemble());
             Ok(())
         }
@@ -209,8 +207,7 @@ fn run_file(path: &PathBuf, debug: bool) -> miette::Result<()> {
 }
 
 fn run(source: &str) -> miette::Result<()> {
-    let mut machine = Machine::new();
-    match machine.interpret(source) {
+    match Machine::interpret(source) {
         Ok(result) => {
             println!(
                 "---\nProgram exited successfully. ({} + {})",
@@ -219,7 +216,10 @@ fn run(source: &str) -> miette::Result<()> {
             );
             Ok(())
         }
-        Err(e) => Err(e.into()),
+       Err(e) => {
+             let report: miette::Report = e.into();
+            return Err(report.with_source_code(source.to_string()));
+        }
     }
 }
 
