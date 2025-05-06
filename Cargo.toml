@@ -18,3 +18,8 @@ rustyline = "15.0.0"
 
 [dev-dependencies]
 rstest = "0.25.0"
+
+
+[features]
+default = []
+execution-trace = []
