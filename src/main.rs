@@ -184,7 +184,8 @@ fn compile(source: &str) -> miette::Result<()> {
     match compiler.compile() {
         Ok(function) => {
             let chunk = function.chunk;
-            println!("{}", chunk.disassemble());
+            let s = chunk.disassemble().unwrap();
+            println!("{}", s);
             Ok(())
         }
         Err(e) => {

@@ -116,6 +116,11 @@ impl Machine {
     }
 
     fn run(&mut self) -> Result<(), RuntimeError> {
+        #[cfg(feature = "execution-trace")]
+        {
+            println!("OFFS    SPAN OP               ARGS");
+            println!("----------------------------------------");
+        }
         while !self.is_done() {
             self.step()?;
         }
@@ -125,16 +130,35 @@ impl Machine {
     /// Checks if the machine has finished executing
     fn is_done(&self) -> bool {
         if let Some(frame) = self.frame() {
-            return frame.pointer >= self.chunk().count();
+            return frame.pointer >= self.chunk().size();
         } else {
             return true;
         }
     }
 
     fn step(&mut self) -> Result<(), RuntimeError> {
-        // TODO: Add stack tracing https://craftinginterpreters.com/a-virtual-machine.html#stack-tracing
         if let Some(code) = self.read_u8() {
             let code = Op::from(code);
+
+            #[cfg(feature = "execution-trace")]
+            {
+                print!("             ");
+                let frame = self
+                .frame()
+                .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
+            let (s, _) = self.chunk().disassemble_at(frame.pointer - 1).unwrap();
+            println!(
+                "|{}|",
+                &self
+                    .stack
+                    .iter()
+                    .map(|t| format!("{}", t))
+                    .collect::<Vec<_>>()
+                    .join("|")
+            );
+                println!("{}", s);
+            }
+
             match code {
                 Op::Return => return Ok(()),
                 Op::Constant => {
@@ -145,9 +169,10 @@ impl Machine {
                     self.pop();
                 }
                 Op::PopN => {
-                    if let Some(n) = self.read_u8() {
-                        self.stack.truncate(self.stack.len() - n as usize);
-                    }
+                    let n = self.read_u8().ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    })?;
+                    self.stack.truncate(self.stack.len() - n as usize);
                 }
                 Op::True => self.push(Value::Bool(true)),
                 Op::False => self.push(Value::Bool(false)),
@@ -163,11 +188,10 @@ impl Machine {
                 Op::LessEqual => self.binary_op(|a, b| Ok(Value::Bool(a <= b)))?,
                 Op::GreaterEqual => self.binary_op(|a, b| Ok(Value::Bool(a >= b)))?,
                 Op::Echo => {
-                    if let Some(value) = self.pop() {
-                        println!("{}", value);
-                    } else {
-                        todo!("Handle empty stack on echo");
-                    }
+                    let value = self.pop().ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    })?;
+                    println!("{}", value);
                 }
                 Op::DefineGlobal => {
                     let constant = self.read_value();
@@ -214,36 +238,49 @@ impl Machine {
                     }
                 }
                 Op::JumpIfFalse => {
-                    if let Some(value) = self.peek(0) {
-                        if let Some(offset) = self.read_u16() {
-                            if value == Value::Bool(false) {
-                                let frame = self.frame_mut().ok_or_else(|| {
-                                    RuntimeError::InternalError(InternalError::NoFrame)
-                                })?;
-                                frame.increment(offset as usize);
-                            }
-                            return Ok(());
-                        }
-                    }
-                    todo!("Handle various runtime error cases");
-                }
-                Op::Jump => {
-                    if let Some(offset) = self.read_u16() {
-                        if let Some(frame) = self.frame_mut() {
+                    //   if let Some(value) = self.peek(0) {
+                    //         if value == Value::Bool(false) {
+                    //             if let Some(offset) = self.read_u16() {
+                    //                 self.increment_pointer(offset as usize);
+                    //                 continue;
+                    //             }
+                    //         }
+                    //     }
+                    //     self.increment_pointer(2);
+                    let value = self.peek(0).ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    })?;
+                    let offset = self.read_u16().ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    })?;
+                    match value {
+                        Value::Bool(true) => (),
+                        Value::Bool(false) => {
+                            let frame = self.frame_mut().ok_or_else(|| {
+                                RuntimeError::InternalError(InternalError::NoFrame)
+                            })?;
                             frame.increment(offset as usize);
                         }
-                        return Ok(());
+                        _ => todo!("Handle non bool value"),
                     }
-                    todo!("Handle various runtime error cases");
+                }
+                Op::Jump => {
+                    let offset = self.read_u16().ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    })?;
+                    let frame = self
+                        .frame_mut()
+                        .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
+                    frame.increment(offset as usize);
                 }
                 Op::Loop => {
-                    if let Some(offset) = self.read_u16() {
-                        if let Some(frame) = self.frame_mut() {
-                            frame.decrement(offset as usize);
-                        }
-                        return Ok(());
-                    }
-                    todo!("Handle various runtime error cases");
+                    let offset = self.read_u16().ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    })?;
+                    let frame = self
+                        .frame_mut()
+                        .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
+                    frame.decrement(offset as usize);
                 }
             }
         }
@@ -279,8 +316,8 @@ impl Machine {
         &mut self,
         op: fn(a: Value, b: Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        if let Some(a) = self.pop() {
-            if let Some(b) = self.pop() {
+        if let Some(b) = self.pop() {
+            if let Some(a) = self.pop() {
                 let result = op(a, b)?;
                 self.push(result);
                 return Ok(());

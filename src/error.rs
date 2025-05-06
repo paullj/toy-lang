@@ -162,6 +162,11 @@ pub enum InternalError {
     #[diagnostic(code(internal::no_frame))]
     #[diagnostic(help("No active frame"))]
     NoFrame,
+
+    #[error("failed to read bytecode")]
+    #[diagnostic(code(internal::failed_bytecode_read))]
+    #[diagnostic(help("Failed to read the bytecode"))]
+    FailedBytecodeRead
 }
 
 impl From<ParseIntError> for Error {

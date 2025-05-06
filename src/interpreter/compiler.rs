@@ -261,14 +261,14 @@ impl<'a> Compiler<'a> {
                 self.patch_jump(else_offset);
             }
             (Operator::While, [condition, then @ Tree::Construct(Operator::Block, _, _)]) => {
-                let loop_start = self.context.function.chunk.count();
+                let loop_start = self.context.function.chunk.size();
                 self.compile_tree(condition)?;
 
                 let jump_offset = self.emit_op_with_args(Op::JumpIfFalse, &[0xff, 0xff], span);
                 self.emit_op(Op::Pop, span);
 
                 self.compile_tree(then)?;
-                let offset = self.context.function.chunk.count() + Op::Loop.size() - loop_start;
+                let offset = self.context.function.chunk.size() + Op::Loop.size() - loop_start;
                 if offset > u16::MAX as usize {
                     return Err(Error::CompilerError(CompilerError::LoopBodyToLarge));
                 }
@@ -282,10 +282,10 @@ impl<'a> Compiler<'a> {
                 self.emit_op(Op::Pop, span);
             }
             (Operator::Loop, [body @ Tree::Construct(Operator::Block, _, _)]) => {
-                let loop_start = self.context.function.chunk.count();
+                let loop_start = self.context.function.chunk.size();
                 self.compile_tree(body)?;
 
-                let offset = self.context.function.chunk.count() + Op::Loop.size() - loop_start;
+                let offset = self.context.function.chunk.size() + Op::Loop.size() - loop_start;
                 if offset > u16::MAX as usize {
                     return Err(Error::CompilerError(CompilerError::LoopBodyToLarge));
                 }
@@ -331,7 +331,7 @@ impl<'a> Compiler<'a> {
             .function
             .chunk
             .write_u8(op.into(), span);
-        let offset = self.context.function.chunk.count();
+        let offset = self.context.function.chunk.size();
         for &arg in args {
             self.context
                 .function
@@ -345,7 +345,7 @@ impl<'a> Compiler<'a> {
     fn patch_jump(&mut self, offset: usize) {
         // TODO: In crafting interpreters, they do this in two parts because they have a single pass compiler.
         //       We _could_ compile a tree first then count the bytes and only apply it once we have the final size.
-        let relative = self.context.function.chunk.count() - offset - 2;
+        let relative = self.context.function.chunk.size() - offset - 2;
         if relative > u16::MAX as usize {
             panic!("Too much code to jump over.");
         }
@@ -408,7 +408,7 @@ mod tests {
         let function = result.unwrap();
         let chunk = function.chunk;
 
-        assert_eq!(chunk.count(), 8, "Expected 8 ops, got {}", chunk.count());
+        assert_eq!(chunk.size(), 8, "Expected 8 ops, got {}", chunk.size());
         assert_eq!(
             chunk.read_u8(0).unwrap(),
             Op::Constant.into(),
