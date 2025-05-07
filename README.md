@@ -58,7 +58,7 @@ struct Dog {
     }
 }
 
-let dog: Dog = Dog::new("Sally")
-
+let dog: Dog = Dog.new("Sally")
 echo dog.bark()
+
 ```

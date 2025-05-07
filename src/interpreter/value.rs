@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    fmt::{write, Display},
+    fmt::Display,
     hash::{Hash, Hasher},
     ops::{Add, Div, Mul, Neg, Not, Sub},
 };
@@ -21,11 +21,11 @@ pub enum Value {
 impl Clone for Value {
     fn clone(&self) -> Self {
         match self {
-            Value::Float(a) => Value::Float(*a),
-            Value::Int(a) => Value::Int(*a),
-            Value::Bool(a) => Value::Bool(*a),
-            Value::String(a) => Value::String(a.clone()),
-            Value::Function(function) => Value::Function(function.clone()),
+            Value::Float(v) => Value::Float(*v),
+            Value::Int(v) => Value::Int(*v),
+            Value::Bool(v) => Value::Bool(*v),
+            Value::String(v) => Value::String(v.clone()),
+            Value::Function(v) => Value::Function(v.clone()),
         }
     }
 }
@@ -33,11 +33,11 @@ impl Clone for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Float(a) => write!(f, "{}", a),
-            Value::Int(a) => write!(f, "{}", a),
-            Value::Bool(a) => write!(f, "{}", a),
-            Value::String(a) => write!(f, "{}", a),
-            Value::Function(function) => write!(f, "{}", function.name),
+            Value::Float(v) => write!(f, "{}", v),
+            Value::Int(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::String(v) => write!(f, "{}", v),
+            Value::Function(v) => write!(f, "{}", v),
         }
     }
 }
@@ -116,8 +116,8 @@ impl Neg for Value {
 
     fn neg(self) -> Result<Value, RuntimeError> {
         match self {
-            Value::Float(a) => Ok(Value::Float(-a)),
-            Value::Int(a) => Ok(Value::Int(-a)),
+            Value::Float(v) => Ok(Value::Float(-v)),
+            Value::Int(v) => Ok(Value::Int(-v)),
             _ => Err(RuntimeError::InvalidOperation {
                 operation: "-".to_string(),
             }),
@@ -130,7 +130,7 @@ impl Not for Value {
 
     fn not(self) -> Result<Value, RuntimeError> {
         match self {
-            Value::Bool(a) => Ok(Value::Bool(!a)),
+            Value::Bool(v) => Ok(Value::Bool(!v)),
             _ => Err(RuntimeError::InvalidOperation {
                 operation: "!".to_string(),
             }),
@@ -141,10 +141,10 @@ impl Not for Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Value) -> bool {
         match (self, other) {
-            (Value::Float(a), Value::Float(b)) => a == b,
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Bool(a), Value::Bool(b)) => a == b,
-            (Value::String(a), Value::String(b)) => a == b,
+            (Value::Float(v), Value::Float(b)) => v == b,
+            (Value::Int(v), Value::Int(b)) => v == b,
+            (Value::Bool(v), Value::Bool(b)) => v == b,
+            (Value::String(v), Value::String(b)) => v == b,
             _ => false,
         }
     }
@@ -168,20 +168,20 @@ impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
             Value::Float(a) => {
-                        // TODO: Support hashable NaN and Infinity
-                        // TODO: Do we want NaN and Infinity to be possible values in the language?
-                        if a.is_nan() {
-                            f64::NAN.to_bits().hash(state);
-                        } else if a.is_infinite() {
-                            f64::INFINITY.to_bits().hash(state);
-                        } else {
-                            a.to_bits().hash(state);
-                        }
-                    }
+                // TODO: Support hashable NaN and Infinity
+                // TODO: Do we want NaN and Infinity to be possible values in the language?
+                if a.is_nan() {
+                    f64::NAN.to_bits().hash(state);
+                } else if a.is_infinite() {
+                    f64::INFINITY.to_bits().hash(state);
+                } else {
+                    a.to_bits().hash(state);
+                }
+            }
             Value::Int(a) => a.hash(state),
             Value::Bool(a) => a.hash(state),
             Value::String(a) => a.hash(state),
-            Value::Function(function) => todo!(),
+            Value::Function(a) => a.name.hash(state),
         }
     }
 }

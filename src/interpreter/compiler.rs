@@ -1,10 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, mem};
 
 use crate::{
     error::{CompilerError, Error, Span},
     syntax::{
         ast::{Atom, Operator, Tree},
-        parse::Parser,
+        parse::{NO_SPAN, Parser},
     },
 };
 
@@ -20,15 +20,20 @@ struct Context {
     function: Function,
     locals: Vec<Local>,
     scope_depth: usize,
+    parent: Option<Box<Context>>,
 }
 
 impl Context {
-    fn new() -> Self {
+    fn new(function: Function, scope_depth: usize) -> Self {
         Self {
-            function: Function::new("main".into(), 0),
+            function,
+            scope_depth,
             locals: Vec::new(),
-            scope_depth: 0,
+            parent: None,
         }
+    }
+    fn script() -> Self {
+        Self::new(Function::new("script".into(), 0), 0)
     }
 }
 
@@ -60,7 +65,7 @@ impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
         Self {
             parser: Parser::new(source),
-            context: Context::new(),
+            context: Context::script(),
         }
     }
 
@@ -68,7 +73,7 @@ impl<'a> Compiler<'a> {
         let root = self.parser.parse()?;
         self.compile_tree(&root)?;
 
-        self.emit_op(Op::Return, &(0..0).into());
+        self.emit_op(Op::Return, &NO_SPAN);
 
         Ok(self.context.function)
     }
@@ -95,7 +100,7 @@ impl<'a> Compiler<'a> {
             Atom::Identifier(s) => {
                 let (arg, get_op, _) = match self.get_variable(s) {
                     Ok(result) => result,
-                    Err(_) => todo!("Error"),
+                    Err(_) => todo!("error in get_variable"),
                 };
                 self.emit_op_with_args(get_op, &[arg], span);
             }
@@ -193,9 +198,11 @@ impl<'a> Compiler<'a> {
                             },
                         ));
                     } else {
-                        self.context.locals.push(Local {name: name.to_string(), depth: None});
-                        if let Some(last) = self.context.locals.last_mut()
-                        {
+                        self.context.locals.push(Local {
+                            name: name.to_string(),
+                            depth: None,
+                        });
+                        if let Some(last) = self.context.locals.last_mut() {
                             last.depth = Some(self.context.scope_depth);
                         }
                     }
@@ -256,7 +263,7 @@ impl<'a> Compiler<'a> {
                 let else_offset = self.emit_op_with_args(Op::Jump, &[0xff, 0xff], span);
                 self.patch_jump(then_offset);
                 self.emit_op(Op::Pop, span);
-                
+
                 self.compile_tree(else_)?;
                 self.patch_jump(else_offset);
             }
@@ -306,7 +313,31 @@ impl<'a> Compiler<'a> {
                 .iter()
                 .all(|e| matches!(e, Tree::Atom(Atom::Identifier(_), _))) =>
             {
-                let arity = args.len() as u8;
+                let function = Function::new(name.to_string(), args.len() as u8);
+                self.begin_context(Context::new(function.clone(), self.context.scope_depth + 1));
+                self.begin_scope();
+
+                self.context.locals.push(Local {
+                    name: name.to_string(),
+                    depth: Some(self.context.scope_depth),
+                });
+
+                for arg in args {
+                    if let Tree::Atom(Atom::Identifier(name), _) = arg {
+                        self.context.locals.push(Local {
+                            name: name.to_string(),
+                            depth: Some(self.context.scope_depth),
+                        });
+                    }
+                }
+                self.compile_tree(body)?;
+                self.emit_op(Op::Return, span);
+
+                self.end_context();
+
+                let constant = self.write_constant(Value::Function(function))?;
+                self.emit_op_with_args(Op::Constant, &[constant], span);
+                self.emit_op_with_args(Op::DefineGlobal, &[constant], span);
             }
             (op, _) => todo!("Implement operator in compiler.rs {op:?}"),
         }
@@ -314,8 +345,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn write_constant(&mut self, value: Value) -> Result<u8, Error> {
-        if let Some(constant) = self.context.function.chunk.write_constant(value) {
-            return Ok(constant);
+        if let Some(index) = self.context.function.chunk.write_constant(value) {
+            return Ok(index);
         }
         Err(Error::CompilerError(CompilerError::TooManyConstants))
     }
@@ -327,16 +358,10 @@ impl<'a> Compiler<'a> {
 
     /// Emits an operation with multiple arguments to the chunk and returns the index of the operation
     fn emit_op_with_args(&mut self, op: Op, args: &[u8], span: &Span) -> usize {
-        self.context
-            .function
-            .chunk
-            .write_u8(op.into(), span);
+        self.context.function.chunk.write_u8(op.into(), span);
         let offset = self.context.function.chunk.size();
         for &arg in args {
-            self.context
-                .function
-                .chunk
-                .write_u8(arg, span);
+            self.context.function.chunk.write_u8(arg, span);
         }
 
         offset
@@ -350,9 +375,11 @@ impl<'a> Compiler<'a> {
             panic!("Too much code to jump over.");
         }
         self.context
-            .function.chunk
+            .function
+            .chunk
             .update_u8(offset, ((relative >> 8) & 0xff) as u8);
-        self.context.function
+        self.context
+            .function
             .chunk
             .update_u8(offset + 1, (relative & 0xff) as u8);
     }
@@ -361,12 +388,29 @@ impl<'a> Compiler<'a> {
         if let Some(local_arg) = self.context.resolve_local(name) {
             return Ok((local_arg, Op::GetLocal, Op::SetLocal));
         } else if let Some(global_arg) = self
-            .context.function.chunk
+            .context
+            .function
+            .chunk
             .write_constant(Value::String(name.to_string()))
         {
             return Ok((global_arg, Op::GetGlobal, Op::SetGlobal));
         }
         Err(())
+    }
+
+    fn begin_context(&mut self, context: Context) {
+        let previous = mem::replace(&mut self.context, context);
+        self.context.parent = Some(Box::new(previous));
+    }
+
+    fn end_context(&mut self) -> Context {
+        let parent = self
+            .context
+            .parent
+            .take()
+            .expect("tried to end context in a script");
+        let context = mem::replace(&mut self.context, *parent);
+        context
     }
 
     fn begin_scope(&mut self) {
@@ -382,13 +426,11 @@ impl<'a> Compiler<'a> {
                 .locals
                 .iter()
                 .rev()
-                .take_while(|local| {
-                    local.depth.unwrap() > self.context.scope_depth
-                })
+                .take_while(|local| local.depth.unwrap() > self.context.scope_depth)
                 .count();
         let pops = self.context.locals.len() - keep;
         if pops > 0 {
-            self.emit_op_with_args(Op::PopN, &[pops as u8], &(0..0).into());
+            self.emit_op_with_args(Op::PopN, &[pops as u8], &NO_SPAN);
             self.context.locals.truncate(keep);
         }
     }

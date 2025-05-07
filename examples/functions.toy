@@ -2,8 +2,4 @@ fn say_hello() {
     echo "hello world!"
 }
 
-fn add(a, b) {
-    return a + b
-}
-
 echo say_hello

@@ -15,7 +15,6 @@ pub struct Chunk {
 
 impl Display for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        
         let s = self.disassemble().unwrap();
         write!(f, "{}", s)?;
         Ok(())
@@ -50,17 +49,14 @@ impl Chunk {
 
     /// Writes a constant to the [`Chunk`] and returns its index
     pub fn write_constant(&mut self, value: Value) -> Option<u8> {
-        if let Value::String(_) = value {
-            if let Some(&index) = self.constants_map.get(&value.clone()) {
-                return Some(index);
-            }
+        // TODO: This feels dodgy
+        if let Some(&index) = self.constants_map.get(&value.clone()) {
+            return Some(index);
         }
+
         let index = self.constants.len();
-        // Only store the mapping for strings
-        if let Value::String(_) = value {
-            if let Ok(idx) = u8::try_from(index) {
-                self.constants_map.insert(value.clone(), idx);
-            }
+        if let Ok(idx) = u8::try_from(index) {
+            self.constants_map.insert(value.clone(), idx);
         }
         self.constants.push(value);
         // TODO: Chunk currently only supports 256 constants
@@ -70,10 +66,20 @@ impl Chunk {
     /// Disassembles the [`Chunk`] into a string
     pub fn disassemble(&self) -> Result<String, ()> {
         let mut s = String::new();
+
+        s.push_str("> CONSTANTS\n");
+        s.push_str("IDX  VALUE\n");
+        s.push_str("----------------------------------------\n");
+        for (i, v) in self.constants.iter().enumerate() {
+            s.push_str(&format!("{i:04} {v}\n"));
+        }
+        s.push_str("\n");
+
         let mut offset = 0;
+        s.push_str("> BYTECODE\n");
         s.push_str("OFFS    SPAN OP               ARGS\n");
         s.push_str("----------------------------------------\n");
-         while offset < self.size() {
+        while offset < self.size() {
             let (line, size) = self.disassemble_at(offset)?;
             s.push_str(&format!("{line}\n"));
             offset += size;

@@ -118,6 +118,7 @@ impl Machine {
     fn run(&mut self) -> Result<(), RuntimeError> {
         #[cfg(feature = "execution-trace")]
         {
+            println!("> EXECUTION");
             println!("OFFS    SPAN OP               ARGS");
             println!("----------------------------------------");
         }
@@ -144,18 +145,18 @@ impl Machine {
             {
                 print!("             ");
                 let frame = self
-                .frame()
-                .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
-            let (s, _) = self.chunk().disassemble_at(frame.pointer - 1).unwrap();
-            println!(
-                "|{}|",
-                &self
-                    .stack
-                    .iter()
-                    .map(|t| format!("{}", t))
-                    .collect::<Vec<_>>()
-                    .join("|")
-            );
+                    .frame()
+                    .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
+                let (s, _) = self.chunk().disassemble_at(frame.pointer - 1).unwrap();
+                println!(
+                    "|{}|",
+                    &self
+                        .stack
+                        .iter()
+                        .map(|t| format!("{}", t))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                );
                 println!("{}", s);
             }
 
@@ -163,10 +164,10 @@ impl Machine {
                 Op::Return => return Ok(()),
                 Op::Constant => {
                     let constant = self.read_value();
-                    self.push(constant.clone());
+                    self.push_stack(constant);
                 }
                 Op::Pop => {
-                    self.pop();
+                    self.pop_stack();
                 }
                 Op::PopN => {
                     let n = self.read_u8().ok_or_else(|| {
@@ -174,8 +175,8 @@ impl Machine {
                     })?;
                     self.stack.truncate(self.stack.len() - n as usize);
                 }
-                Op::True => self.push(Value::Bool(true)),
-                Op::False => self.push(Value::Bool(false)),
+                Op::True => self.push_stack(Value::Bool(true)),
+                Op::False => self.push_stack(Value::Bool(false)),
                 Op::Negate => self.unary_op(|a| -a)?,
                 Op::Add => self.binary_op(|a, b| a + b)?,
                 Op::Subtract => self.binary_op(|a, b| a - b)?,
@@ -188,37 +189,32 @@ impl Machine {
                 Op::LessEqual => self.binary_op(|a, b| Ok(Value::Bool(a <= b)))?,
                 Op::GreaterEqual => self.binary_op(|a, b| Ok(Value::Bool(a >= b)))?,
                 Op::Echo => {
-                    let value = self.pop().ok_or_else(|| {
+                    let value = self.pop_stack().ok_or_else(|| {
                         RuntimeError::InternalError(InternalError::FailedBytecodeRead)
                     })?;
                     println!("{}", value);
                 }
                 Op::DefineGlobal => {
                     let constant = self.read_value();
-                    if let Value::String(s) = constant {
-                        if let Some(p) = self.pop() {
-                            self.globals.insert(s.to_string(), p.clone());
-                        }
+                    if let Some(p) = self.pop_stack() {
+                        self.globals.insert(constant.to_string(), p.clone());
                     } else {
-                        panic!("Unable to read constant from table");
+                        panic!("nothing to pop!")
                     }
                 }
                 Op::GetGlobal => {
                     let constant = self.read_value();
-                    if let Value::String(s) = constant {
-                        if let Some(v) = self.globals.get(&s.to_string()) {
-                            self.push(v.clone())
-                        } else {
-                            todo!("Handle undefined global variable");
-                        }
+
+                    if let Some(v) = self.globals.get(&constant.to_string()) {
+                        self.push_stack(v.clone())
                     } else {
-                        panic!("Unable to read constant from table");
+                        todo!("Handle undefined global variable");
                     }
                 }
                 Op::SetGlobal => {
                     let constant = self.read_value();
                     if let Value::String(s) = constant {
-                        if let Some(p) = self.pop() {
+                        if let Some(p) = self.pop_stack() {
                             self.globals.insert(s.to_string(), p.clone());
                         }
                     } else {
@@ -227,26 +223,27 @@ impl Machine {
                 }
                 Op::GetLocal => {
                     if let Some(index) = self.read_u8() {
-                        self.push(self.stack[index as usize].clone());
+                        let offset = self
+                            .frame()
+                            .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?
+                            .slots;
+
+                        self.push_stack(self.stack[index as usize + offset].clone());
                     }
                 }
                 Op::SetLocal => {
                     if let Some(index) = self.read_u8() {
                         if let Some(value) = self.peek(0) {
-                            self.stack[index as usize] = value;
+                            let offset = self
+                                .frame()
+                                .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?
+                                .slots;
+
+                            self.stack[index as usize + offset] = value;
                         }
                     }
                 }
                 Op::JumpIfFalse => {
-                    //   if let Some(value) = self.peek(0) {
-                    //         if value == Value::Bool(false) {
-                    //             if let Some(offset) = self.read_u16() {
-                    //                 self.increment_pointer(offset as usize);
-                    //                 continue;
-                    //             }
-                    //         }
-                    //     }
-                    //     self.increment_pointer(2);
                     let value = self.peek(0).ok_or_else(|| {
                         RuntimeError::InternalError(InternalError::FailedBytecodeRead)
                     })?;
@@ -254,13 +251,13 @@ impl Machine {
                         RuntimeError::InternalError(InternalError::FailedBytecodeRead)
                     })?;
                     match value {
-                        Value::Bool(true) => (),
                         Value::Bool(false) => {
                             let frame = self.frame_mut().ok_or_else(|| {
                                 RuntimeError::InternalError(InternalError::NoFrame)
                             })?;
                             frame.increment(offset as usize);
                         }
+                        Value::Bool(true) => (),
                         _ => todo!("Handle non bool value"),
                     }
                 }
@@ -282,16 +279,16 @@ impl Machine {
                         .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
                     frame.decrement(offset as usize);
                 }
-            }
+            };
         }
         Ok(())
     }
 
-    fn pop(&mut self) -> Option<Value> {
+    fn pop_stack(&mut self) -> Option<Value> {
         self.stack.pop()
     }
 
-    fn push(&mut self, value: Value) {
+    fn push_stack(&mut self, value: Value) {
         self.stack.push(value);
     }
 
@@ -303,10 +300,10 @@ impl Machine {
         &mut self,
         op: fn(a: Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let a = self.pop();
+        let a = self.pop_stack();
         if let Some(a) = a {
             let result = op(a)?;
-            self.push(result);
+            self.push_stack(result);
             return Ok(());
         }
         todo!("Handle empty stack on unary op");
@@ -316,10 +313,10 @@ impl Machine {
         &mut self,
         op: fn(a: Value, b: Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        if let Some(b) = self.pop() {
-            if let Some(a) = self.pop() {
+        if let Some(b) = self.pop_stack() {
+            if let Some(a) = self.pop_stack() {
                 let result = op(a, b)?;
-                self.push(result);
+                self.push_stack(result);
                 return Ok(());
             }
         }

@@ -42,6 +42,6 @@ impl Clone for Function {
 }
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "<fn {}>", self.name)
+        write!(f, "{}", self.name)
     }
 }

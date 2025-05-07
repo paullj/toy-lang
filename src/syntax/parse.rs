@@ -1,5 +1,5 @@
 use core::panic;
-use std::iter::Peekable;
+use std::{iter::Peekable, ops::Range};
 
 use crate::{
     Lexer, Token,
@@ -9,16 +9,16 @@ use crate::{
 
 use super::ast::{Operator, Tree};
 
+pub(crate) const NO_SPAN: Range<usize> = 0..0;
+
 pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>,
-    contents: &'a str,
+    lexer: Peekable<Lexer<'a>>
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            lexer: Lexer::new(input).peekable(),
-            contents: input,
+            lexer: Lexer::new(input).peekable()
         }
     }
 
@@ -45,7 +45,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse(&mut self) -> Result<Tree<'a>, Error> {
         match self.parse_declarations(0) {
-            Ok(tree) => Ok(Tree::Construct(Operator::Root, tree, 0..0)),
+            Ok(tree) => Ok(Tree::Construct(Operator::Root, tree, NO_SPAN)),
             Err(e) => Err(e),
         }
     }
@@ -57,7 +57,7 @@ impl<'a> Parser<'a> {
 
         match declarations {
             Ok(declarations) => {
-                return Ok(Tree::Construct(Operator::Block, declarations, 0..0));
+                return Ok(Tree::Construct(Operator::Block, declarations, NO_SPAN));
             }
             Err(e) => return Err(e),
         }
