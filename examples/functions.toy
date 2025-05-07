@@ -1,5 +1,5 @@
-fn say_hello() {
+fn say_hello(a) {
     echo "hello world!"
 }
 
-echo say_hello
+say_hello(3)

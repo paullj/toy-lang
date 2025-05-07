@@ -56,6 +56,8 @@ pub enum Op {
     Jump,
     /// Loops to an instruction
     Loop,
+    /// Call a function
+    Call,
 }
 
 impl From<Op> for u8 {
@@ -93,7 +95,8 @@ impl From<u8> for Op {
             23 => Op::JumpIfFalse,
             24 => Op::Jump,
             25 => Op::Loop,
-            26..=u8::MAX => panic!("Unknown opcode: {}", op),
+            26 => Op::Call,
+            _ => panic!("Unknown opcode: {}", op),
         }
     }
 }
@@ -127,6 +130,7 @@ impl Op {
             Op::JumpIfFalse => 3,
             Op::Jump => 3,
             Op::Loop => 3,
+            Op::Call => 2,
         }
     }
 }
@@ -160,6 +164,7 @@ impl Display for Op {
             Op::JumpIfFalse => write!(f, "JUMP_IF_FALSE"),
             Op::Jump => write!(f, "JUMP"),
             Op::Loop => write!(f, "LOOP"),
+            Op::Call => write!(f, "CALL"),
         }
     }
 }

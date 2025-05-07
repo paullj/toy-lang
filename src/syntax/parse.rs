@@ -12,13 +12,13 @@ use super::ast::{Operator, Tree};
 pub(crate) const NO_SPAN: Range<usize> = 0..0;
 
 pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>
+    lexer: Peekable<Lexer<'a>>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            lexer: Lexer::new(input).peekable()
+            lexer: Lexer::new(input).peekable(),
         }
     }
 
@@ -233,7 +233,11 @@ impl<'a> Parser<'a> {
             Token::Echo => {
                 self.expect(Token::Echo, "expected echo")?;
                 let (_, r_bp) = Operator::Echo.prefix_binding_power();
-                Ok(Tree::Construct(Operator::Echo, vec![self.parse_expression_within(r_bp)?], span))
+                Ok(Tree::Construct(
+                    Operator::Echo,
+                    vec![self.parse_expression_within(r_bp)?],
+                    span,
+                ))
             }
             Token::If => {
                 self.expect(Token::If, "expected if")?;
@@ -260,7 +264,11 @@ impl<'a> Parser<'a> {
             }
             Token::Loop => {
                 self.expect(Token::Loop, "expected loop")?;
-                Ok(Tree::Construct(Operator::Loop, vec![self.parse_block(min_bp)?], span))
+                Ok(Tree::Construct(
+                    Operator::Loop,
+                    vec![self.parse_block(min_bp)?],
+                    span,
+                ))
             }
             Token::While => {
                 self.expect(Token::While, "expected while")?;
@@ -341,6 +349,7 @@ impl<'a> Parser<'a> {
                         let op = match token {
                             Token::LeftBrace => break,
                             Token::RightParenthesis | Token::Comma | Token::RightBrace => break,
+                            Token::LeftParenthesis => Operator::Call,
                             Token::Plus => Operator::Plus,
                             Token::Minus => Operator::Minus,
                             Token::Asterisk => Operator::Asterisk,
@@ -356,12 +365,19 @@ impl<'a> Parser<'a> {
                             _ => panic!("bad op: {:?}", token),
                         };
                         let span = span.clone();
-                        if let Some((l_bp, ())) = op.postfix_binding_power() {
+                        if let Some((l_bp, _)) = op.postfix_binding_power() {
                             if l_bp < min_bp {
                                 break;
                             }
                             self.lexer.next();
-                            lhs = Tree::Construct(op, vec![lhs], span);
+                            lhs = match op {
+                                Operator::Call => {
+                                    let mut args = self.parser_function_arguments()?;
+                                    args.insert(0, lhs);
+                                    Tree::Construct(op, args, span)
+                                },
+                                _ => Tree::Construct(op, vec![lhs], span),
+                            };
                             continue;
                         }
 
@@ -370,7 +386,11 @@ impl<'a> Parser<'a> {
                                 break;
                             }
                             self.lexer.next();
-                            lhs = Tree::Construct(op, vec![lhs, self.parse_expression_within(r_bp)?], span);
+                            lhs = Tree::Construct(
+                                op,
+                                vec![lhs, self.parse_expression_within(r_bp)?],
+                                span,
+                            );
                         }
                     }
                     Err(e) => {
@@ -383,6 +403,34 @@ impl<'a> Parser<'a> {
             }
         }
         Ok(lhs)
+    }
+
+    pub fn parser_function_arguments(&mut self) -> Result<Vec<Tree<'a>>, Error> {
+        // NOTE: Parent has already eaten left paren as the operator
+        let mut arguments = Vec::new();
+        loop {
+            let (token, _) = match self.lexer.peek() {
+                Some(Ok((token, span))) => (token, span),
+                Some(Err(e)) => {
+                    panic!("Error: {:?}", e);
+                }
+                None => break,
+            };
+            let arg = match token {
+                Token::RightParenthesis => {
+                    self.expect(Token::RightParenthesis, "expected ')'")?;
+                    break;
+                }
+                Token::Comma => {
+                    self.expect(Token::Comma, "expected ','")?;
+                    continue;
+                }
+                _ => self.parse_expression_within(0)?,
+            };
+
+            arguments.push(arg);
+        }
+        Ok(arguments)
     }
 }
 

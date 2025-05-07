@@ -279,6 +279,15 @@ impl Machine {
                         .ok_or_else(|| RuntimeError::InternalError(InternalError::NoFrame))?;
                     frame.decrement(offset as usize);
                 }
+                Op::Call => {
+                    let arg_count = self.read_u8().ok_or_else(|| {
+                        RuntimeError::InternalError(InternalError::FailedBytecodeRead)
+                    });
+                    // TODO: Actually call it
+                    // if !self.call_value(arg_count) {
+                    //     return Err(InterpretResult::RuntimeError);
+                    // }
+                }
             };
         }
         Ok(())
